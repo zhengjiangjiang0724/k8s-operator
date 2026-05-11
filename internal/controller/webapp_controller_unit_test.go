@@ -53,11 +53,11 @@ func newTestScheme(t *testing.T) *runtime.Scheme {
 }
 
 // newTestWebApp returns a minimal valid WebApp for unit tests.
-func newTestWebApp(name, ns string) *myappv1alpha1.WebApp {
+func newTestWebApp(name string) *myappv1alpha1.WebApp {
 	return &myappv1alpha1.WebApp{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
-			Namespace:  ns,
+			Namespace:  "default",
 			Generation: 1,
 			Finalizers: []string{"myapp.example.com/webapp-finalizer"},
 		},
@@ -78,7 +78,7 @@ func newTestWebApp(name, ns string) *myappv1alpha1.WebApp {
 // Failed phase, the Degraded condition, and returns the original error.
 func TestSetDegradedAndReturn(t *testing.T) {
 	s := newTestScheme(t)
-	webapp := newTestWebApp("test", "default")
+	webapp := newTestWebApp("test")
 
 	c := fake.NewClientBuilder().
 		WithScheme(s).
@@ -128,7 +128,7 @@ func TestSetDegradedAndReturn(t *testing.T) {
 // (the ReconcileErrors counter increment).
 func TestRecordMetricsErrorPath(t *testing.T) {
 	s := newTestScheme(t)
-	webapp := newTestWebApp("metrics-test", "default")
+	webapp := newTestWebApp("metrics-test")
 
 	r := &WebAppReconciler{
 		Client:   fake.NewClientBuilder().WithScheme(s).Build(),
@@ -167,7 +167,7 @@ func TestReconcileNotFound(t *testing.T) {
 // The fake client does not enforce CRD regex validation, so this works.
 func TestReconcileBuildDeploymentError(t *testing.T) {
 	s := newTestScheme(t)
-	webapp := newTestWebApp("bad-resources", "default")
+	webapp := newTestWebApp("bad-resources")
 	webapp.Spec.Resources = &myappv1alpha1.ResourceRequirements{
 		Requests: &myappv1alpha1.ResourceList{
 			CPU: "not-a-valid-quantity",
@@ -207,7 +207,7 @@ func TestReconcileBuildDeploymentError(t *testing.T) {
 // handleDeletion when the finalizer is already absent.
 func TestHandleDeletionNoFinalizer(t *testing.T) {
 	s := newTestScheme(t)
-	webapp := newTestWebApp("no-finalizer", "default")
+	webapp := newTestWebApp("no-finalizer")
 	// Give it some other finalizer so DeletionTimestamp is allowed, but not ours.
 	webapp.Finalizers = []string{"other.example.com/finalizer"}
 	now := metav1.Now()
@@ -237,7 +237,7 @@ func TestHandleDeletionNoFinalizer(t *testing.T) {
 // underlying Deployment has not yet been created.
 func TestUpdateStatusFromDeploymentNotFound(t *testing.T) {
 	s := newTestScheme(t)
-	webapp := newTestWebApp("no-deploy", "default")
+	webapp := newTestWebApp("no-deploy")
 
 	c := fake.NewClientBuilder().
 		WithScheme(s).
@@ -272,7 +272,7 @@ func TestUpdateStatusFromDeploymentNotFound(t *testing.T) {
 // We use a fake client interceptor to inject the error.
 func TestReconcileIngressDisabledWithExisting(t *testing.T) {
 	s := newTestScheme(t)
-	webapp := newTestWebApp("ingress-cleanup", "default")
+	webapp := newTestWebApp("ingress-cleanup")
 	// Ingress disabled in spec
 
 	existingIngress := &networkingv1.Ingress{

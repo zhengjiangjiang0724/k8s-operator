@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -72,6 +73,38 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+
+		By("waiting for webhook certificate to be ready")
+		Eventually(func() error {
+			cmd := exec.Command("kubectl", "get", "certificate", "-n", namespace, "-o", "jsonpath={.items[?(@.metadata.name=='k8s-operator-serving-cert')].status.conditions[?(@.type=='Ready')].status}")
+			out, err := utils.Run(cmd)
+			if err != nil {
+				return err
+			}
+			if string(out) != "True" {
+				return fmt.Errorf("certificate not ready yet")
+			}
+			return nil
+		}, 2*time.Minute, 5*time.Second).Should(Succeed(), "Webhook certificate did not become ready")
+
+		By("waiting for controller-manager pods to be ready")
+		Eventually(func() error {
+			cmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-l", "control-plane=controller-manager", "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}")
+			out, err := utils.Run(cmd)
+			if err != nil {
+				return err
+			}
+			statuses := strings.Fields(string(out))
+			if len(statuses) == 0 {
+				return fmt.Errorf("no pods found")
+			}
+			for _, s := range statuses {
+				if s != "True" {
+					return fmt.Errorf("pod not ready")
+				}
+			}
+			return nil
+		}, 3*time.Minute, 5*time.Second).Should(Succeed(), "Controller pods did not become ready")
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,

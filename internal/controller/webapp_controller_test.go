@@ -88,7 +88,7 @@ var _ = Describe("WebApp Controller", func() {
 			// First reconcile: adds finalizer
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
+			Expect(result.Requeue).To(BeTrue()) //nolint:staticcheck // Requeue deprecated but still used in controller
 
 			// Verify finalizer was added
 			webapp := &myappv1alpha1.WebApp{}
@@ -106,7 +106,7 @@ var _ = Describe("WebApp Controller", func() {
 			// Second reconcile: sets Creating phase
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
+			Expect(result.Requeue).To(BeTrue()) //nolint:staticcheck // Requeue deprecated but still used in controller
 
 			webapp := &myappv1alpha1.WebApp{}
 			Expect(k8sClient.Get(ctx, namespacedName, webapp)).To(Succeed())

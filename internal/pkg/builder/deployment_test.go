@@ -56,8 +56,8 @@ func TestBuildDeployment_Basic(t *testing.T) {
 	if *deploy.Spec.Replicas != 3 {
 		t.Errorf("expected 3 replicas, got %d", *deploy.Spec.Replicas)
 	}
-	if deploy.TypeMeta.Kind != "Deployment" {
-		t.Errorf("expected Kind=Deployment, got %s", deploy.TypeMeta.Kind)
+	if deploy.Kind != "Deployment" {
+		t.Errorf("expected Kind=Deployment, got %s", deploy.Kind)
 	}
 
 	container := deploy.Spec.Template.Spec.Containers[0]
@@ -162,9 +162,11 @@ func TestBuildDeployment_WithHealthCheck(t *testing.T) {
 	}
 }
 
+const testUpdateStrategyRecreate = "Recreate"
+
 func TestBuildDeployment_RecreateStrategy(t *testing.T) {
 	webapp := newTestWebApp()
-	webapp.Spec.UpdateStrategy = "Recreate"
+	webapp.Spec.UpdateStrategy = testUpdateStrategyRecreate
 	deploy, err := BuildDeployment(webapp)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -194,8 +196,8 @@ func TestBuildService_Basic(t *testing.T) {
 	if svc.Name != "test-app" {
 		t.Errorf("expected name test-app, got %s", svc.Name)
 	}
-	if svc.TypeMeta.Kind != "Service" {
-		t.Errorf("expected Kind=Service, got %s", svc.TypeMeta.Kind)
+	if svc.Kind != "Service" {
+		t.Errorf("expected Kind=Service, got %s", svc.Kind)
 	}
 	if svc.Spec.Type != corev1.ServiceTypeNodePort {
 		t.Errorf("expected NodePort, got %s", svc.Spec.Type)
@@ -223,8 +225,8 @@ func TestBuildIngress_Enabled(t *testing.T) {
 	if ingress == nil {
 		t.Fatal("expected Ingress to be created")
 	}
-	if ingress.TypeMeta.Kind != "Ingress" {
-		t.Errorf("expected Kind=Ingress, got %s", ingress.TypeMeta.Kind)
+	if ingress.Kind != "Ingress" {
+		t.Errorf("expected Kind=Ingress, got %s", ingress.Kind)
 	}
 	if ingress.Spec.Rules[0].Host != "myapp.example.com" {
 		t.Errorf("expected host myapp.example.com, got %s", ingress.Spec.Rules[0].Host)

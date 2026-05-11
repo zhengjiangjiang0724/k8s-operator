@@ -91,7 +91,7 @@ func BenchmarkReconcile_SteadyState(b *testing.B) {
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "bench", Namespace: "default"}}
 
 	// Prime the state: finalizer + phase + sub-resources
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_, _ = r.Reconcile(context.Background(), req)
 	}
 
@@ -109,7 +109,7 @@ func BenchmarkReconcile_WithIngress(b *testing.B) {
 	r := buildClient(b, w)
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "bench", Namespace: "default"}}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_, _ = r.Reconcile(context.Background(), req)
 	}
 
@@ -126,7 +126,7 @@ func BenchmarkReconcile_Parallel(b *testing.B) {
 	// Pre-create N webapps
 	const numApps = 16
 	apps := make([]*myappv1alpha1.WebApp, numApps)
-	for i := 0; i < numApps; i++ {
+	for i := range numApps {
 		apps[i] = makeWebApp(fmt.Sprintf("bench-%d", i), false)
 	}
 
@@ -145,9 +145,9 @@ func BenchmarkReconcile_Parallel(b *testing.B) {
 	}
 
 	// Prime each
-	for i := 0; i < numApps; i++ {
+	for i := range numApps {
 		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: apps[i].Name, Namespace: "default"}}
-		for j := 0; j < 3; j++ {
+		for range 3 {
 			_, _ = r.Reconcile(context.Background(), req)
 		}
 	}

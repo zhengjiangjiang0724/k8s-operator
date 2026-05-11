@@ -191,8 +191,9 @@ func main() {
 	}
 
 	if err := (&controller.WebAppReconciler{
-		Client:                  mgr.GetClient(),
-		Scheme:                  mgr.GetScheme(),
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		// nolint:staticcheck // GetEventRecorder requires v1.Events API which we don't use yet
 		Recorder:                mgr.GetEventRecorderFor("webapp-operator"),
 		MaxConcurrentReconciles: maxConcurrentReconciles,
 	}).SetupWithManager(mgr); err != nil {
