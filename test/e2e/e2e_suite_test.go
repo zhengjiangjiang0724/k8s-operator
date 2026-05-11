@@ -47,7 +47,7 @@ var (
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting k8s-operator e2e test suite\n")
-	RunSpecs(t, "e2e suite")
+	RunSpecs(t, "e2e suite", Label("e2e"))
 }
 
 var _ = BeforeSuite(func() {

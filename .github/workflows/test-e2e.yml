@@ -42,6 +42,8 @@ jobs:
         run: |
           go mod tidy
           make test-e2e
+        env:
+          GINKGO_TIMEOUT: 20m
 
       - name: Dump kind cluster on failure
         if: failure()
