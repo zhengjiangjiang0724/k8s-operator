@@ -38,7 +38,16 @@ import (
 // it is not auto-populated by the typed client.
 func BuildDeployment(webapp *myappv1alpha1.WebApp) (*appsv1.Deployment, error) {
 	labels := k8sutil.CommonLabels(webapp)
-	replicas := webapp.GetReplicas()
+
+	// When HPA is configured we deliberately leave Deployment.Spec.Replicas
+	// nil so the HPA owns this field. If we set it via SSA, every reconcile
+	// would fight the HPA (controller sets replicas=spec.replicas → HPA
+	// scales to N → controller resets → ...).
+	var replicasPtr *int32
+	if webapp.Spec.Autoscaling == nil {
+		r := webapp.GetReplicas()
+		replicasPtr = &r
+	}
 
 	deploy := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -51,7 +60,7 @@ func BuildDeployment(webapp *myappv1alpha1.WebApp) (*appsv1.Deployment, error) {
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
+			Replicas: replicasPtr,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},

@@ -53,6 +53,12 @@ func fullyPopulatedAlpha() *v1alpha1.WebApp {
 				PeriodSeconds:       10,
 			},
 			UpdateStrategy: "RollingUpdate",
+			Autoscaling: &v1alpha1.AutoscalingSpec{
+				MinReplicas:                       ptr.To(int32(2)),
+				MaxReplicas:                       10,
+				TargetCPUUtilizationPercentage:    ptr.To(int32(70)),
+				TargetMemoryUtilizationPercentage: ptr.To(int32(80)),
+			},
 		},
 		Status: v1alpha1.WebAppStatus{
 			Phase:              v1alpha1.PhaseRunning,

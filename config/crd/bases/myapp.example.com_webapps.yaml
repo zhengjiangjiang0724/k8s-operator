@@ -59,6 +59,45 @@ spec:
           spec:
             description: spec defines the desired state of WebApp.
             properties:
+              autoscaling:
+                description: |-
+                  autoscaling enables HorizontalPodAutoscaler-driven scaling. When set,
+                  `spec.replicas` becomes the *initial* replica count and HPA owns
+                  subsequent scaling decisions. Leave nil to use static `spec.replicas`.
+                properties:
+                  maxReplicas:
+                    description: maxReplicas is the upper bound for HPA. Must be >=
+                      minReplicas.
+                    format: int32
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                  minReplicas:
+                    default: 1
+                    description: minReplicas is the lower bound for HPA. Defaults
+                      to 1.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  targetCPUUtilizationPercentage:
+                    description: |-
+                      targetCPUUtilizationPercentage is the target average CPU utilization
+                      across pods, expressed as a percentage of pod's CPU request.
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                  targetMemoryUtilizationPercentage:
+                    description: |-
+                      targetMemoryUtilizationPercentage is the target average memory
+                      utilization across pods, expressed as a percentage of pod's memory request.
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                required:
+                - maxReplicas
+                type: object
               enableIngress:
                 default: false
                 description: enableIngress controls whether an Ingress resource is
@@ -321,6 +360,45 @@ spec:
           spec:
             description: spec defines the desired state of WebApp.
             properties:
+              autoscaling:
+                description: |-
+                  autoscaling enables HorizontalPodAutoscaler-driven scaling. When set,
+                  `spec.replicas` becomes the *initial* replica count and HPA owns
+                  subsequent scaling decisions. Leave nil to use static `spec.replicas`.
+                properties:
+                  maxReplicas:
+                    description: maxReplicas is the upper bound for HPA. Must be >=
+                      minReplicas.
+                    format: int32
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                  minReplicas:
+                    default: 1
+                    description: minReplicas is the lower bound for HPA. Defaults
+                      to 1.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  targetCPUUtilizationPercentage:
+                    description: |-
+                      targetCPUUtilizationPercentage is the target average CPU utilization
+                      across pods, expressed as a percentage of pod's CPU request.
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                  targetMemoryUtilizationPercentage:
+                    description: |-
+                      targetMemoryUtilizationPercentage is the target average memory
+                      utilization across pods, expressed as a percentage of pod's memory request.
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                required:
+                - maxReplicas
+                type: object
               enableIngress:
                 default: false
                 description: enableIngress controls whether an Ingress resource is

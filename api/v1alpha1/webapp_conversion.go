@@ -72,6 +72,14 @@ func convertSpecToV1Beta1(src WebAppSpec) v1beta1.WebAppSpec {
 			PeriodSeconds:       src.HealthCheck.PeriodSeconds,
 		}
 	}
+	if src.Autoscaling != nil {
+		dst.Autoscaling = &v1beta1.AutoscalingSpec{
+			MinReplicas:                       src.Autoscaling.MinReplicas,
+			MaxReplicas:                       src.Autoscaling.MaxReplicas,
+			TargetCPUUtilizationPercentage:    src.Autoscaling.TargetCPUUtilizationPercentage,
+			TargetMemoryUtilizationPercentage: src.Autoscaling.TargetMemoryUtilizationPercentage,
+		}
+	}
 	return dst
 }
 
@@ -102,6 +110,14 @@ func convertSpecFromV1Beta1(src v1beta1.WebAppSpec) WebAppSpec {
 			Path:                src.HealthCheck.Path,
 			InitialDelaySeconds: src.HealthCheck.InitialDelaySeconds,
 			PeriodSeconds:       src.HealthCheck.PeriodSeconds,
+		}
+	}
+	if src.Autoscaling != nil {
+		dst.Autoscaling = &AutoscalingSpec{
+			MinReplicas:                       src.Autoscaling.MinReplicas,
+			MaxReplicas:                       src.Autoscaling.MaxReplicas,
+			TargetCPUUtilizationPercentage:    src.Autoscaling.TargetCPUUtilizationPercentage,
+			TargetMemoryUtilizationPercentage: src.Autoscaling.TargetMemoryUtilizationPercentage,
 		}
 	}
 	return dst
