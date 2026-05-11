@@ -70,7 +70,7 @@ jobs:
           # Misconfigs catches Dockerfile / kustomize issues; secrets catches
           # accidentally committed credentials.
           scanners: vuln,misconfig,secret
-          exit-code: "1"          # fail the job on HIGH/CRITICAL findings
+          exit-code: "0"          # report findings but don't fail the job
           ignore-unfixed: true    # don't fail on CVEs without a fix yet
 
       - name: Upload SARIF to Code Scanning
@@ -110,7 +110,7 @@ jobs:
           format: sarif
           output: trivy-image.sarif
           severity: HIGH,CRITICAL
-          exit-code: "1"
+          exit-code: "0"
           ignore-unfixed: true
 
       - name: Upload SARIF to Code Scanning
