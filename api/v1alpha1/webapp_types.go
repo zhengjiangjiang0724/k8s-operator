@@ -145,6 +145,44 @@ type WebAppSpec struct {
 	// +kubebuilder:default=RollingUpdate
 	// +optional
 	UpdateStrategy string `json:"updateStrategy,omitempty"`
+
+	// autoscaling enables HorizontalPodAutoscaler-driven scaling. When set,
+	// `spec.replicas` becomes the *initial* replica count and HPA owns
+	// subsequent scaling decisions. Leave nil to use static `spec.replicas`.
+	// +optional
+	Autoscaling *AutoscalingSpec `json:"autoscaling,omitempty"`
+}
+
+// AutoscalingSpec configures the HorizontalPodAutoscaler created for this WebApp.
+//
+// At least one of `targetCPUUtilizationPercentage` or
+// `targetMemoryUtilizationPercentage` must be set — HPA needs at least
+// one metric to make scaling decisions.
+type AutoscalingSpec struct {
+	// minReplicas is the lower bound for HPA. Defaults to 1.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=1
+	// +optional
+	MinReplicas *int32 `json:"minReplicas,omitempty"`
+
+	// maxReplicas is the upper bound for HPA. Must be >= minReplicas.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=1000
+	MaxReplicas int32 `json:"maxReplicas"`
+
+	// targetCPUUtilizationPercentage is the target average CPU utilization
+	// across pods, expressed as a percentage of pod's CPU request.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	TargetCPUUtilizationPercentage *int32 `json:"targetCPUUtilizationPercentage,omitempty"`
+
+	// targetMemoryUtilizationPercentage is the target average memory
+	// utilization across pods, expressed as a percentage of pod's memory request.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	TargetMemoryUtilizationPercentage *int32 `json:"targetMemoryUtilizationPercentage,omitempty"`
 }
 
 // WebAppStatus defines the observed state of WebApp.

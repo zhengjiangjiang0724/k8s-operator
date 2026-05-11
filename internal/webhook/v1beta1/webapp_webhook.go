@@ -164,6 +164,25 @@ func validateWebApp(webapp *myappv1beta1.WebApp) error {
 			"ingressHost is required when enableIngress is true"))
 	}
 
+	if a := webapp.Spec.Autoscaling; a != nil {
+		autoPath := field.NewPath("spec", "autoscaling")
+		minR := int32(1)
+		if a.MinReplicas != nil {
+			minR = *a.MinReplicas
+		}
+		if a.MaxReplicas < minR {
+			allErrs = append(allErrs, field.Invalid(
+				autoPath.Child("maxReplicas"),
+				a.MaxReplicas,
+				fmt.Sprintf("maxReplicas (%d) must be >= minReplicas (%d)", a.MaxReplicas, minR)))
+		}
+		if a.TargetCPUUtilizationPercentage == nil && a.TargetMemoryUtilizationPercentage == nil {
+			allErrs = append(allErrs, field.Required(
+				autoPath,
+				"at least one of targetCPUUtilizationPercentage or targetMemoryUtilizationPercentage must be set"))
+		}
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}

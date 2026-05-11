@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -401,6 +402,122 @@ var _ = Describe("WebApp Controller", func() {
 			// Verify IngressURL is cleared in status
 			Expect(k8sClient.Get(ctx, nn, wa)).To(Succeed())
 			Expect(wa.Status.IngressURL).To(BeEmpty())
+		})
+	})
+
+	Context("When Autoscaling is enabled", func() {
+		const hpaName = "hpa-test"
+		nn := types.NamespacedName{Name: hpaName, Namespace: namespace}
+
+		AfterEach(func() {
+			webapp := &myappv1alpha1.WebApp{}
+			if err := k8sClient.Get(ctx, nn, webapp); err == nil {
+				webapp.Finalizers = nil
+				_ = k8sClient.Update(ctx, webapp)
+				_ = k8sClient.Delete(ctx, webapp)
+			}
+			// Clean up owned HPA (no GC in envtest)
+			hpa := &autoscalingv2.HorizontalPodAutoscaler{}
+			if err := k8sClient.Get(ctx, nn, hpa); err == nil {
+				_ = k8sClient.Delete(ctx, hpa)
+			}
+		})
+
+		It("should create HPA when Autoscaling is configured", func() {
+			webapp := &myappv1alpha1.WebApp{
+				ObjectMeta: metav1.ObjectMeta{Name: hpaName, Namespace: namespace},
+				Spec: myappv1alpha1.WebAppSpec{
+					Image:          "nginx:1.25",
+					Replicas:       ptr.To(int32(2)),
+					Port:           80,
+					ServiceType:    corev1.ServiceTypeClusterIP,
+					UpdateStrategy: "RollingUpdate",
+					Autoscaling: &myappv1alpha1.AutoscalingSpec{
+						MinReplicas:                    ptr.To(int32(2)),
+						MaxReplicas:                    8,
+						TargetCPUUtilizationPercentage: ptr.To(int32(70)),
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, webapp)).To(Succeed())
+
+			reconciler := newReconciler()
+			for range 3 {
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("verifying HPA was created with correct min/max + CPU target")
+			hpa := &autoscalingv2.HorizontalPodAutoscaler{}
+			Expect(k8sClient.Get(ctx, nn, hpa)).To(Succeed())
+			Expect(hpa.Spec.MaxReplicas).To(Equal(int32(8)))
+			Expect(hpa.Spec.MinReplicas).NotTo(BeNil())
+			Expect(*hpa.Spec.MinReplicas).To(Equal(int32(2)))
+			Expect(hpa.Spec.ScaleTargetRef.Name).To(Equal(hpaName))
+			Expect(hpa.Spec.Metrics).To(HaveLen(1))
+
+			By("verifying our reconciler does NOT fight HPA over replicas")
+			// Simulate HPA scaling the Deployment to 5 replicas.
+			deploy := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy)).To(Succeed())
+			scaledUp := int32(5)
+			deploy.Spec.Replicas = &scaledUp
+			Expect(k8sClient.Update(ctx, deploy)).To(Succeed())
+
+			// Run reconcile — our controller should NOT reset replicas back.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			deploy2 := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy2)).To(Succeed())
+			Expect(deploy2.Spec.Replicas).NotTo(BeNil())
+			Expect(*deploy2.Spec.Replicas).To(Equal(int32(5)),
+				"reconcile must not reset HPA's replica count (Deployment.Spec.Replicas not owned by us)")
+		})
+
+		It("should delete HPA when Autoscaling is removed", func() {
+			webapp := &myappv1alpha1.WebApp{
+				ObjectMeta: metav1.ObjectMeta{Name: hpaName, Namespace: namespace},
+				Spec: myappv1alpha1.WebAppSpec{
+					Image:          "nginx:1.25",
+					Replicas:       ptr.To(int32(2)),
+					Port:           80,
+					ServiceType:    corev1.ServiceTypeClusterIP,
+					UpdateStrategy: "RollingUpdate",
+					Autoscaling: &myappv1alpha1.AutoscalingSpec{
+						MaxReplicas:                    5,
+						TargetCPUUtilizationPercentage: ptr.To(int32(80)),
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, webapp)).To(Succeed())
+
+			reconciler := newReconciler()
+			for range 3 {
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			Expect(k8sClient.Get(ctx, nn, &autoscalingv2.HorizontalPodAutoscaler{})).To(Succeed())
+
+			By("removing Autoscaling from spec")
+			wa := &myappv1alpha1.WebApp{}
+			Expect(k8sClient.Get(ctx, nn, wa)).To(Succeed())
+			wa.Spec.Autoscaling = nil
+			Expect(k8sClient.Update(ctx, wa)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying HPA was deleted")
+			err = k8sClient.Get(ctx, nn, &autoscalingv2.HorizontalPodAutoscaler{})
+			Expect(errors.IsNotFound(err)).To(BeTrue())
+
+			By("verifying Deployment.Spec.Replicas is now set again")
+			deploy := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy)).To(Succeed())
+			Expect(deploy.Spec.Replicas).NotTo(BeNil(),
+				"Replicas should be re-set after HPA removal")
 		})
 	})
 })

@@ -29,3 +29,9 @@ spec:
     initialDelaySeconds: 5
     periodSeconds: 10
   updateStrategy: RollingUpdate
+  # Uncomment to enable HPA-driven autoscaling. When set, `replicas` above
+  # becomes the *initial* count and HPA owns subsequent scaling decisions.
+  # autoscaling:
+  #   minReplicas: 2
+  #   maxReplicas: 10
+  #   targetCPUUtilizationPercentage: 70

@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -68,7 +69,15 @@ type WebAppReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+
+// Metric label values for success/error outcomes — used across
+// reconcile / sub-resource operation metrics.
+const (
+	resultSuccess = "success"
+	resultError   = "error"
+)
 
 // requeueInterval is the periodic requeue interval for health-check
 // reconciliation. Watches already cover spec/status drift; this periodic
@@ -121,22 +130,29 @@ func (r *WebAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := r.reconcileDeployment(ctx, webapp); err != nil {
 		r.Recorder.Eventf(webapp, corev1.EventTypeWarning, "ReconcileDeploymentFailed",
 			"Failed to reconcile Deployment: %v", err)
-		r.recordMetrics(webapp, startTime, "error")
+		r.recordMetrics(webapp, startTime, resultError)
 		return ctrl.Result{}, r.setDegradedAndReturn(ctx, webapp, "ReconcileDeploymentFailed", err)
 	}
 
 	if err := r.reconcileService(ctx, webapp); err != nil {
 		r.Recorder.Eventf(webapp, corev1.EventTypeWarning, "ReconcileServiceFailed",
 			"Failed to reconcile Service: %v", err)
-		r.recordMetrics(webapp, startTime, "error")
+		r.recordMetrics(webapp, startTime, resultError)
 		return ctrl.Result{}, r.setDegradedAndReturn(ctx, webapp, "ReconcileServiceFailed", err)
 	}
 
 	if err := r.reconcileIngress(ctx, webapp); err != nil {
 		r.Recorder.Eventf(webapp, corev1.EventTypeWarning, "ReconcileIngressFailed",
 			"Failed to reconcile Ingress: %v", err)
-		r.recordMetrics(webapp, startTime, "error")
+		r.recordMetrics(webapp, startTime, resultError)
 		return ctrl.Result{}, r.setDegradedAndReturn(ctx, webapp, "ReconcileIngressFailed", err)
+	}
+
+	if err := r.reconcileHPA(ctx, webapp); err != nil {
+		r.Recorder.Eventf(webapp, corev1.EventTypeWarning, "ReconcileHPAFailed",
+			"Failed to reconcile HPA: %v", err)
+		r.recordMetrics(webapp, startTime, resultError)
+		return ctrl.Result{}, r.setDegradedAndReturn(ctx, webapp, "ReconcileHPAFailed", err)
 	}
 
 	// 6. Update status from Deployment state
@@ -145,7 +161,7 @@ func (r *WebAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// 7. Record metrics
-	r.recordMetrics(webapp, startTime, "success")
+	r.recordMetrics(webapp, startTime, resultSuccess)
 
 	log.Info("Reconcile completed successfully")
 	return ctrl.Result{RequeueAfter: requeueInterval}, nil
@@ -224,9 +240,9 @@ func (r *WebAppReconciler) reconcileIngress(ctx context.Context, webapp *myappv1
 			start := time.Now()
 			delErr := r.Delete(ctx, existing)
 			appmetrics.SubresourceOperationDuration.WithLabelValues("Ingress", "delete").Observe(time.Since(start).Seconds())
-			result := "success"
+			result := resultSuccess
 			if delErr != nil {
-				result = "error"
+				result = resultError
 			}
 			appmetrics.SubresourceOperations.WithLabelValues("Ingress", "delete", result).Inc()
 			return delErr
@@ -242,6 +258,43 @@ func (r *WebAppReconciler) reconcileIngress(ctx context.Context, webapp *myappv1
 	}
 
 	return r.ssaApply(ctx, webapp, desired, "Ingress")
+}
+
+// reconcileHPA ensures the HorizontalPodAutoscaler matches the desired state.
+// When spec.autoscaling is nil, deletes any existing HPA — mirrors the Ingress
+// enable/disable lifecycle. When set, the HPA takes over Deployment.replicas.
+func (r *WebAppReconciler) reconcileHPA(ctx context.Context, webapp *myappv1alpha1.WebApp) error {
+	desired := builder.BuildHPA(webapp)
+
+	existing := &autoscalingv2.HorizontalPodAutoscaler{}
+	key := client.ObjectKey{Name: webapp.Name, Namespace: webapp.Namespace}
+	err := r.Get(ctx, key, existing)
+
+	if desired == nil {
+		if err == nil {
+			r.Recorder.Eventf(webapp, corev1.EventTypeNormal, "DeletingHPA",
+				"Deleting HPA %s", existing.Name)
+			start := time.Now()
+			delErr := r.Delete(ctx, existing)
+			appmetrics.SubresourceOperationDuration.WithLabelValues("HPA", "delete").Observe(time.Since(start).Seconds())
+			result := resultSuccess
+			if delErr != nil {
+				result = resultError
+			}
+			appmetrics.SubresourceOperations.WithLabelValues("HPA", "delete", result).Inc()
+			return delErr
+		}
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get HPA: %w", err)
+	}
+
+	if err := k8sutil.SetOwnerReference(webapp, desired, r.Scheme); err != nil {
+		return err
+	}
+
+	return r.ssaApply(ctx, webapp, desired, "HorizontalPodAutoscaler")
 }
 
 // ssaApply performs a Server-Side Apply using controller-runtime's
@@ -269,7 +322,7 @@ func (r *WebAppReconciler) ssaApply(ctx context.Context, _ *myappv1alpha1.WebApp
 
 	unstrMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 	if err != nil {
-		appmetrics.SubresourceOperations.WithLabelValues(kind, "apply", "error").Inc()
+		appmetrics.SubresourceOperations.WithLabelValues(kind, "apply", resultError).Inc()
 		return fmt.Errorf("failed to convert %s to unstructured: %w", kind, err)
 	}
 	u := &unstructured.Unstructured{Object: unstrMap}
@@ -281,10 +334,10 @@ func (r *WebAppReconciler) ssaApply(ctx context.Context, _ *myappv1alpha1.WebApp
 	)
 	appmetrics.SubresourceOperationDuration.WithLabelValues(kind, "apply").Observe(time.Since(start).Seconds())
 	if err != nil {
-		appmetrics.SubresourceOperations.WithLabelValues(kind, "apply", "error").Inc()
+		appmetrics.SubresourceOperations.WithLabelValues(kind, "apply", resultError).Inc()
 		return fmt.Errorf("failed to apply %s: %w", kind, err)
 	}
-	appmetrics.SubresourceOperations.WithLabelValues(kind, "apply", "success").Inc()
+	appmetrics.SubresourceOperations.WithLabelValues(kind, "apply", resultSuccess).Inc()
 	return nil
 }
 
@@ -383,7 +436,7 @@ func (r *WebAppReconciler) recordMetrics(webapp *myappv1alpha1.WebApp, startTime
 	appmetrics.ReconcileDuration.WithLabelValues(webapp.Name, webapp.Namespace, result).Observe(duration)
 	appmetrics.ReconcileTotal.WithLabelValues(webapp.Name, webapp.Namespace, result).Inc()
 
-	if result == "error" {
+	if result == resultError {
 		// Kept for backward compatibility with existing dashboards/alerts.
 		appmetrics.ReconcileErrors.WithLabelValues(webapp.Name, webapp.Namespace).Inc()
 	}
@@ -443,6 +496,7 @@ func (r *WebAppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&networkingv1.Ingress{}).
+		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: concurrency,
 		}).
