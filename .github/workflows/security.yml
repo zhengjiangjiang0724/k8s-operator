@@ -60,7 +60,7 @@ jobs:
           persist-credentials: false
 
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@6f13f31f798a93a6b08d3be0727120e9af35851f # 0.29.0
+        uses: aquasecurity/trivy-action@0.29.0
         with:
           scan-type: fs
           scan-ref: .
@@ -104,7 +104,7 @@ jobs:
           cache-from: type=gha
 
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@6f13f31f798a93a6b08d3be0727120e9af35851f # 0.29.0
+        uses: aquasecurity/trivy-action@0.29.0
         with:
           image-ref: webapp-operator:scan
           format: sarif
