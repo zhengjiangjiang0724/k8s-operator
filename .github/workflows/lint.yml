@@ -27,3 +27,47 @@ jobs:
         run: make lint-config
       - name: Run linter
         run: make lint
+
+  helm-lint:
+    permissions:
+      contents: read
+    name: Helm chart lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Helm
+        # Pin Helm version so a future release that changes lint rules
+        # doesn't silently turn a green build red.
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: v3.16.4
+
+      - name: Helm lint
+        run: helm lint chart/webapp-operator --strict
+
+      - name: Helm template (renders cleanly with defaults)
+        # `helm lint` does not catch all Sprig / templating errors —
+        # actually rendering catches missing fields, syntax bugs, and
+        # invalid YAML output that lint misses.
+        # Do NOT pass --debug: it adds prose output that breaks downstream
+        # YAML parsers (kubeconform).
+        run: |
+          helm template test chart/webapp-operator \
+            --namespace webapp-operator-system > /tmp/rendered.yaml
+          echo "--- rendered $(wc -l < /tmp/rendered.yaml) lines ---"
+
+      - name: Validate rendered manifests against Kubernetes schema
+        # kubeconform checks every rendered manifest is valid Kubernetes
+        # (matches the OpenAPI schema for its kind/apiVersion). Catches
+        # typos that helm lint and template ignore.
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar xz kubeconform
+          ./kubeconform -summary -skip CustomResourceDefinition \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/rendered.yaml
