@@ -17,7 +17,9 @@ on:
     # one has pushed code recently.
     - cron: "0 2 * * 1"
 
-permissions: {}
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   govulncheck:
