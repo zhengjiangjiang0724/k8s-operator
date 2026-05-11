@@ -376,7 +376,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 		It("should reconcile a sample WebApp and create owned sub-resources", func() {
 			By("applying the sample WebApp CR")
-			cmd := exec.Command("kubectl", "apply", "-f", "../../config/samples/myapp_v1alpha1_webapp.yaml")
+			// utils.Run() chdirs to project root, so the path is relative to root.
+			cmd := exec.Command("kubectl", "apply", "-f", "config/samples/myapp_v1alpha1_webapp.yaml")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to apply sample WebApp")
 
