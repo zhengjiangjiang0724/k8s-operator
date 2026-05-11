@@ -25,7 +25,8 @@ resources:
 - ../certmanager
 # [PROMETHEUS] ServiceMonitor for Prometheus Operator. For VictoriaMetrics
 # Operator users, replace with VMServiceScrape (see docs/METRICS.md).
-- ../prometheus
+# Uncomment to enable (requires Prometheus Operator CRDs installed).
+#- ../prometheus
 # [METRICS] Expose the controller manager metrics service.
 - metrics_service.yaml
 # [NETWORK POLICY] Restrict access to /metrics and the webhook server.
