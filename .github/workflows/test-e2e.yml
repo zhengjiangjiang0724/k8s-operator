@@ -1,0 +1,57 @@
+name: E2E Tests
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  test-e2e:
+    permissions:
+      contents: read
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    # Bootstrapping kind + cert-manager + building the manager image typically
+    # takes 5-10 minutes; tests themselves another 5. Cap at 30 to fail fast
+    # on hangs rather than chewing through Actions minutes.
+    timeout-minutes: 30
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install kind (pinned)
+        env:
+          # Pin so a kind release that subtly changes cluster defaults can't
+          # silently break the suite.
+          KIND_VERSION: v0.30.0
+        run: |
+          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-$(go env GOARCH)"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Running Test e2e
+        run: |
+          go mod tidy
+          make test-e2e
+
+      - name: Dump kind cluster on failure
+        if: failure()
+        run: |
+          set +e
+          echo "--- kind clusters ---"
+          kind get clusters
+          echo "--- kubectl get all -A ---"
+          kubectl get all -A || true
+          echo "--- recent events ---"
+          kubectl get events -A --sort-by=.lastTimestamp | tail -50 || true
+          echo "--- controller logs ---"
+          kubectl logs -n k8s-operator-system -l control-plane=controller-manager --tail=200 || true

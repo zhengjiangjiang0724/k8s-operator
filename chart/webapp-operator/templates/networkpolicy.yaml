@@ -1,0 +1,43 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- if .Values.metrics.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "webapp-operator.fullname" . }}-allow-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webapp-operator.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "webapp-operator.selectorLabels" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        {{- toYaml .Values.networkPolicy.metricsFrom | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.metrics.port }}
+{{- end }}
+{{- if .Values.webhook.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "webapp-operator.fullname" . }}-allow-webhooks
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webapp-operator.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "webapp-operator.selectorLabels" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        {{- toYaml .Values.networkPolicy.webhooksFrom | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 9443
+{{- end }}
+{{- end }}

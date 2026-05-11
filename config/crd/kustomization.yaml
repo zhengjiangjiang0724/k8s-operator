@@ -1,0 +1,16 @@
+# This kustomization.yaml is not intended to be run by itself,
+# since it depends on service name and namespace that are out of this kustomize package.
+# It should be run by config/default
+resources:
+- bases/myapp.example.com_webapps.yaml
+# +kubebuilder:scaffold:crdkustomizeresource
+
+patches:
+# [WEBHOOK] Conversion webhook patch — injects spec.conversion into the CRD.
+- path: patches/webhook_in_webapps.yaml
+# +kubebuilder:scaffold:crdkustomizewebhookpatch
+
+# Teaches kustomize how to rewrite the conversion webhook's service name
+# when a namePrefix is applied by config/default.
+configurations:
+- kustomizeconfig.yaml

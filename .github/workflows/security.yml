@@ -1,0 +1,121 @@
+name: Security
+
+# Three independent security gates run on every push/PR:
+#   1. govulncheck — Go module vulnerability scan (CVE database).
+#   2. Trivy filesystem — scan repo for misconfigs, secrets, vulnerable deps.
+#   3. Trivy image — scan a freshly built container image.
+#
+# Results are uploaded to GitHub Code Scanning (SARIF) so they appear in the
+# Security tab and as PR annotations. Failures block merge for HIGH/CRITICAL.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly Monday 02:00 UTC — catches newly published CVEs even when no
+    # one has pushed code recently.
+    - cron: "0 2 * * 1"
+
+permissions: {}
+
+jobs:
+  govulncheck:
+    name: Go vulnerability scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # NOTE: govulncheck reports stdlib CVEs against whatever Go is in go.mod.
+    # `continue-on-error: true` keeps the scan informational rather than
+    # blocking — stdlib CVEs are addressed by bumping go.mod's `go` directive
+    # (then upgrading envtest binaries), which is a separate decision.
+    # Remove this flag once the Go bump cadence is established.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@7da72f730e37eeaad891fcff0a532d27ed737cd4 # v1.0.4
+        with:
+          go-version-file: go.mod
+
+  trivy-fs:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # required to upload SARIF
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          # Misconfigs catches Dockerfile / kustomize issues; secrets catches
+          # accidentally committed credentials.
+          scanners: vuln,misconfig,secret
+          exit-code: "1"          # fail the job on HIGH/CRITICAL findings
+          ignore-unfixed: true    # don't fail on CVEs without a fix yet
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.10
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  trivy-image:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.7.1
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
+        with:
+          context: .
+          load: true
+          tags: webapp-operator:scan
+          cache-from: type=gha
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
+        with:
+          image-ref: webapp-operator:scan
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.10
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image

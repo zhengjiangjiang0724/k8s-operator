@@ -1,0 +1,134 @@
+name: Release
+
+# Tag-triggered release pipeline.
+#
+# Flow:
+#   1. Build a multi-arch image (linux/amd64 + linux/arm64) via buildx.
+#   2. Push to GHCR with the tag name.
+#   3. Generate SBOM (SPDX) for the image via Anchore syft.
+#   4. Sign image + SBOM via cosign keyless (Sigstore OIDC).
+#   5. Render the install manifest via kustomize.
+#   6. Create a GitHub Release attaching the install manifest and SBOM.
+#
+# Triggered by pushing a tag matching `v*.*.*` (semver).
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    name: Build, sign, release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # required to create a GitHub Release
+      packages: write       # required to push to GHCR
+      id-token: write       # required for cosign keyless OIDC signing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.7.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@906ecf0fc0a80f9110f79d9e6c04b1080f4a2621 # v5.6.1
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=,suffix=,format=short
+
+      - name: Build and push multi-arch image
+        id: build
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: false # we generate a richer SBOM with syft below
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@4959ce089c160fddf62f7b42464195ba1a56d382 # v3.6.0
+
+      - name: Sign image (keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          set -euo pipefail
+          for tag in $TAGS; do
+            echo "Signing $tag@$DIGEST"
+            cosign sign --yes "${tag}@${DIGEST}"
+          done
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@9246b90769f852b3a8921f330c59e0b3f439d6e9 # v0.20.6
+
+      - name: Generate SBOM (SPDX-JSON)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          syft "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}" \
+            -o spdx-json=sbom.spdx.json
+
+      - name: Attest SBOM via cosign
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          set -euo pipefail
+          for tag in $TAGS; do
+            cosign attest --yes \
+              --predicate sbom.spdx.json \
+              --type spdxjson \
+              "${tag}@${DIGEST}"
+          done
+
+      - name: Build install manifest
+        env:
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+        run: |
+          make build-installer IMG="$IMG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/install.yaml
+            sbom.spdx.json

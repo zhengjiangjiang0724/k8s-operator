@@ -1,10 +1,12 @@
 # k8s-operator
+
 面向 Go 平台开发岗位面试的 Kubernetes Operator 实战项目
+
 # K8s Operator 项目技术设计文档
 
 > **项目定位**：面向 Go 平台开发岗位面试的 Kubernetes Operator 实战项目
-> **技术栈**：Go 1.22+ / Kubernetes 1.28+ / Kubebuilder / controller-runtime
-> **文档版本**：v1.0 | **日期**：2026-05
+> **技术栈**：Go 1.25+ / Kubernetes 1.35+ / Kubebuilder v4 / controller-runtime v0.23
+> **文档版本**：v1.1 | **日期**：2026-05
 
 ---
 
@@ -146,12 +148,12 @@ Kubebuilder = controller-runtime + controller-gen + kustomize
 ┌──────────────────────────────────────────────┐
 │                  技术栈                      │
 ├──────────────────────────────────────────────┤
-│  框架:      Kubebuilder v3 (controller-gen)  │
-│  运行时:    controller-runtime v0.18+        │
+│  框架:      Kubebuilder v4 (controller-gen)  │
+│  运行时:    controller-runtime v0.23         │
 │  客户端:    client-go (通过 controller-runtime│
 │             封装，必要时直接使用)             │
-│  Go 版本:   1.22+                            │
-│  K8s 版本:  1.28+                            │
+│  Go 版本:   1.25+                            │
+│  K8s 版本:  1.35+                            │
 └──────────────────────────────────────────────┘
 ```
 
@@ -405,16 +407,17 @@ spec:
 ```
 webapp-operator/
 ├── Makefile                    # 构建、测试、部署入口
+├── Dockerfile                  # 容器镜像构建
 ├── PROJECT                     # Kubebuilder 项目元信息
 ├── go.mod
 ├── go.sum
 │
 ├── cmd/
-│   └── main.go                 # 入口：Manager 初始化、Controller 注册
+│   └── main.go                 # 入口：Manager 初始化、Controller/Webhook 注册
 │
 ├── api/
 │   └── v1alpha1/
-│       ├── webapp_types.go     # CRD Go 结构体定义 (Spec / Status)
+│       ├── webapp_types.go     # CRD Go 结构体定义 (Spec / Status / Phase)
 │       ├── groupversion_info.go # SchemeBuilder / GroupVersion
 │       └── zz_generated.deepcopy.go  # controller-gen 自动生成
 │
@@ -427,54 +430,45 @@ webapp-operator/
 │   │
 │   │   # ---------- Webhooks ----------
 │   ├── webhook/
-│   │   ├── webhook_suite_test.go
 │   │   └── v1alpha1/
-│   │       ├── webapp_mutating_webhook.go   # MutatingAdmissionWebhook
-│   │       └── webapp_validating_webhook.go # ValidatingAdmissionWebhook
+│   │       ├── webapp_webhook.go      # Mutating + Validating Webhook
+│   │       ├── webapp_webhook_test.go # Webhook 测试
+│   │       └── webhook_suite_test.go  # Webhook 测试环境 setup
 │   │
 │   │   # ---------- 内部业务逻辑 ----------
 │   └── pkg/
 │       ├── builder/
 │       │   ├── deployment.go     # Deployment 构建器
 │       │   ├── service.go        # Service 构建器
-│       │   ├── ingress.go        # Ingress 构建器
-│       │   └── configmap.go      # ConfigMap 构建器
+│       │   └── ingress.go        # Ingress 构建器
 │       ├── condition/
 │       │   └── condition.go      # Status Condition 管理
 │       ├── finalizer/
 │       │   └── finalizer.go      # Finalizer 工具函数
 │       └── k8sutil/
-│           ├── merge.go          # Server-Side Apply 工具
-│           └── owner.go          # OwnerReference 工具
+│           └── owner.go          # OwnerReference / CommonLabels 工具
 │
 ├── config/
+│   ├── certmanager/             # cert-manager 证书配置
 │   ├── crd/
-│   │   ├── bases/                # controller-gen 生成的 CRD YAML
-│   │   │   └── myapp.example.com_webapps.yaml
-│   │   └── patches/              # CRD patch (可选)
-│   ├── default/                  # kustomize 默认配置
-│   │   ├── kustomization.yaml
-│   │   └── manager_auth_proxy_patch.yaml
+│   │   └── bases/               # controller-gen 生成的 CRD YAML
+│   │       └── myapp.example.com_webapps.yaml
+│   ├── default/                 # kustomize 默认配置
 │   ├── manager/
-│   │   ├── kustomization.yaml
-│   │   └── manager.yaml          # Manager Deployment
-│   ├── rbac/
-│   │   ├── role.yaml
-│   │   ├── role_binding.yaml
-│   │   └── service_account.yaml
+│   │   └── manager.yaml         # Manager Deployment
+│   ├── network-policy/          # 网络策略
+│   ├── rbac/                    # RBAC 权限配置
 │   ├── samples/
 │   │   └── myapp_v1alpha1_webapp.yaml  # 示例 CR
-│   └── prometheus/               # 监控配置
-│       ├── monitor.yaml
-│       └── kustomization.yaml
+│   ├── webhook/                 # Webhook 服务配置
+│   └── prometheus/              # 监控配置
 │
 ├── test/
-│   ├── e2e/                      # 端到端测试
-│   │   └── webapp_e2e_test.go
+│   ├── e2e/                     # 端到端测试
 │   └── utils/
 │
 └── hack/
-    └── boilerplate.go.txt        # 自动生成文件的头注释
+    └── boilerplate.go.txt       # 自动生成文件的头注释
 ```
 
 ---
@@ -500,10 +494,9 @@ type Reconciler interface {
 // internal/controller/webapp_controller.go
 
 type WebAppReconciler struct {
-    client.Client       // K8s 客户端（已封装 cache）
-    scheme *runtime.Scheme
-    Log    logr.Logger   // 结构化日志
-    Recorder record.EventRecorder // K8s 事件记录器
+    client.Client                        // K8s 客户端（已封装 cache）
+    Scheme   *runtime.Scheme
+    Recorder record.EventRecorder        // K8s 事件记录器
 }
 ```
 
@@ -539,8 +532,8 @@ func (r *WebAppReconciler) updateStatus(
     patchFn func(*myappv1alpha1.WebAppStatus),
 ) error
 
-// === Finalizer ===
-func (r *WebAppReconciler) handleFinalizer(
+// === 删除处理 ===
+func (r *WebAppReconciler) handleDeletion(
     ctx context.Context,
     webapp *myappv1alpha1.WebApp,
 ) (ctrl.Result, error)
@@ -549,36 +542,26 @@ func (r *WebAppReconciler) handleFinalizer(
 func (r *WebAppReconciler) SetupWithManager(mgr ctrl.Manager) error
 ```
 
-### 6.4 Builder 接口
+### 6.4 Builder 函数
 
 ```go
-// internal/pkg/builder/deployment.go
+// internal/pkg/builder/ — 纯函数式构建器，无状态
 
-type DeploymentBuilder struct {
-    webapp  *myappv1alpha1.WebApp
-    labels  map[string]string
-    ownerRefs []metav1.OwnerReference
-}
-
-func NewDeploymentBuilder(webapp *myappv1alpha1.WebApp) *DeploymentBuilder
-func (b *DeploymentBuilder) WithLabels(labels map[string]string) *DeploymentBuilder
-func (b *DeploymentBuilder) Build() (*appsv1.Deployment, error)
+func BuildDeployment(webapp *myappv1alpha1.WebApp) *appsv1.Deployment
+func BuildService(webapp *myappv1alpha1.WebApp) *corev1.Service
+func BuildIngress(webapp *myappv1alpha1.WebApp) *networkingv1.Ingress  // 未启用时返回 nil
 ```
 
 ### 6.5 Webhook 接口
 
 ```go
-// Mutating webhook: 实现 admission.CustomDefaulter
-var _ admission.CustomDefaulter = &WebAppCustomDefaulter{}
+// Mutating webhook: 实现 webhook.CustomDefaulter (typed)
+func (d *WebAppCustomDefaulter) Default(ctx context.Context, obj *myappv1alpha1.WebApp) error
 
-func (d *WebAppCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error
-
-// Validating webhook: 实现 admission.CustomValidator
-var _ admission.CustomValidator = &WebAppCustomValidator{}
-
-func (v *WebAppCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) error
-func (v *WebAppCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) error
-func (v *WebAppCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) error
+// Validating webhook: 实现 webhook.CustomValidator (typed)
+func (v *WebAppCustomValidator) ValidateCreate(ctx context.Context, obj *myappv1alpha1.WebApp) (admission.Warnings, error)
+func (v *WebAppCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *myappv1alpha1.WebApp) (admission.Warnings, error)
+func (v *WebAppCustomValidator) ValidateDelete(ctx context.Context, obj *myappv1alpha1.WebApp) (admission.Warnings, error)
 ```
 
 ---
@@ -746,40 +729,35 @@ func (r *WebAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 ```
 
 ```go
-const webappFinalizer = "myapp.example.com/webapp-finalizer"
+// internal/pkg/finalizer/finalizer.go
+const WebAppFinalizer = "myapp.example.com/webapp-finalizer"
 
-func (r *WebAppReconciler) handleFinalizer(
+// internal/controller/webapp_controller.go
+func (r *WebAppReconciler) handleDeletion(
     ctx context.Context,
     webapp *myappv1alpha1.WebApp,
 ) (ctrl.Result, error) {
-    if controllerutil.ContainsFinalizer(webapp, webappFinalizer) {
-        // === 执行清理逻辑 ===
-        if err := r.cleanupExternalResources(ctx, webapp); err != nil {
-            // 清理失败 → 返回 error，会重新入队
-            r.Recorder.Eventf(webapp, corev1.EventTypeWarning,
-                "CleanupFailed", "Failed to cleanup: %v", err)
-            return ctrl.Result{RequeueAfter: time.Second * 10}, err
-        }
-
-        // 清理完成 → 移除 finalizer
-        controllerutil.RemoveFinalizer(webapp, webappFinalizer)
-        if err := r.Update(ctx, webapp); err != nil {
-            return ctrl.Result{}, err
-        }
-        r.Recorder.Event(webapp, corev1.EventTypeNormal,
-            "CleanupComplete", "External resources cleaned up")
+    if !finalizer.HasFinalizer(webapp) {
+        return ctrl.Result{}, nil
     }
-    // finalizer 已移除，K8s 会完成真正的删除
-    return ctrl.Result{}, nil
-}
 
-func (r *WebAppReconciler) cleanupExternalResources(
-    ctx context.Context,
-    webapp *myappv1alpha1.WebApp,
-) error {
-    // 幂等清理：检查资源是否存在再删除
-    // 例如删除 DNS 记录、云资源等
-    return nil
+    log.Info("Performing cleanup for WebApp deletion")
+
+    // 更新 Phase 为 Deleting
+    _ = r.updateStatus(ctx, webapp, func(s *myappv1alpha1.WebAppStatus) {
+        s.Phase = myappv1alpha1.PhaseDeleting
+    })
+
+    // 执行清理（owned 资源通过 OwnerReference 自动级联删除，
+    // 此处可扩展外部资源清理逻辑）
+    r.Recorder.Event(webapp, corev1.EventTypeNormal,
+        "CleanupComplete", "External resources cleaned up")
+
+    // 移除 finalizer，允许 K8s 完成真正的删除
+    if err := finalizer.RemoveFinalizer(ctx, r.Client, webapp); err != nil {
+        return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+    }
+    return ctrl.Result{}, nil
 }
 ```
 
@@ -850,58 +828,42 @@ func (r *WebAppReconciler) updateStatusSSA(
 #### 7.5.1 Mutating Webhook (自动注入默认值/标签)
 
 ```go
-// internal/webhook/v1alpha1/webapp_mutating_webhook.go
+// internal/webhook/v1alpha1/webapp_webhook.go
 
-// +kubebuilder:webhook:path=/mutate-myapp-example-com-v1alpha1-webapp,
-//   mutating=true,failurePolicy=fail,sideEffects=None,
-//   groups=myapp.example.com,resources=webapps,verbs=create;update,
-//   versions=v1alpha1,name=mwebapp.kb.io,
-//   admissionReviewVersions=v1
+// WebAppCustomDefaulter — 无状态，使用 Kubebuilder v4 typed webhook 签名
+type WebAppCustomDefaulter struct{}
 
-type WebAppCustomDefaulter struct {
-    Client  client.Client
-    Decoder admission.Decoder
-}
-
-var _ admission.CustomDefaulter = &WebAppCustomDefaulter{}
-
-func (d *WebAppCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
-    webapp, ok := obj.(*myappv1alpha1.WebApp)
-    if !ok {
-        return fmt.Errorf("expected a WebApp but got %T", obj)
-    }
-
-    log := log.FromContext(ctx).WithValues("webapp", klog.KObj(webapp))
-    log.Info("Mutating webhook called")
-
+func (d *WebAppCustomDefaulter) Default(_ context.Context, obj *myappv1alpha1.WebApp) error {
     // 注入默认标签
-    if webapp.Labels == nil {
-        webapp.Labels = make(map[string]string)
+    if obj.Labels == nil {
+        obj.Labels = make(map[string]string)
     }
-    webapp.Labels["app.kubernetes.io/managed-by"] = "webapp-operator"
-    webapp.Labels["app.kubernetes.io/instance"] = webapp.Name
+    obj.Labels["app.kubernetes.io/managed-by"] = "webapp-operator"
+    obj.Labels["app.kubernetes.io/instance"] = obj.Name
 
     // 设置默认 replicas
-    if webapp.Spec.Replicas == 0 {
-        webapp.Spec.Replicas = 1
+    if obj.Spec.Replicas == nil {
+        defaultReplicas := int32(1)
+        obj.Spec.Replicas = &defaultReplicas
     }
 
-    // 设置默认 port
-    if webapp.Spec.Port == 0 {
-        webapp.Spec.Port = 8080
-    }
-
-    // 设置默认 serviceType
-    if webapp.Spec.ServiceType == "" {
-        webapp.Spec.ServiceType = corev1.ServiceTypeClusterIP
-    }
+    // 设置默认 port / serviceType / updateStrategy
+    if obj.Spec.Port == 0 { obj.Spec.Port = 8080 }
+    if obj.Spec.ServiceType == "" { obj.Spec.ServiceType = corev1.ServiceTypeClusterIP }
+    if obj.Spec.UpdateStrategy == "" { obj.Spec.UpdateStrategy = "RollingUpdate" }
 
     // 如果启用了 Ingress 但未设置 host，自动生成
-    if webapp.Spec.EnableIngress && webapp.Spec.IngressHost == "" {
-        webapp.Spec.IngressHost = fmt.Sprintf("%s.%s.svc.cluster.local",
-            webapp.Name, webapp.Namespace)
+    if obj.Spec.EnableIngress && obj.Spec.IngressHost == "" {
+        obj.Spec.IngressHost = fmt.Sprintf("%s.%s.svc.cluster.local",
+            obj.Name, obj.Namespace)
     }
 
+    // 默认 healthCheck
+    if obj.Spec.HealthCheck == nil {
+        obj.Spec.HealthCheck = &myappv1alpha1.HealthCheck{
+            Path: "/healthz", InitialDelaySeconds: 10, PeriodSeconds: 10,
+        }
+    }
     return nil
 }
 ```
@@ -909,137 +871,55 @@ func (d *WebAppCustomDefaulter) Default(ctx context.Context, obj runtime.Object)
 #### 7.5.2 Validating Webhook (参数校验)
 
 ```go
-// internal/webhook/v1alpha1/webapp_validating_webhook.go
-
-// +kubebuilder:webhook:path=/validate-myapp-example-com-v1alpha1-webapp,
-//   mutating=false,failurePolicy=fail,sideEffects=None,
-//   groups=myapp.example.com,resources=webapps,verbs=create;update,
-//   versions=v1alpha1,name=vwebapp.kb.io,
-//   admissionReviewVersions=v1
-
-type WebAppCustomValidator struct {
-    Client  client.Client
-    Decoder admission.Decoder
-}
-
-var _ admission.CustomValidator = &WebAppCustomValidator{}
+// WebAppCustomValidator — 无状态
+type WebAppCustomValidator struct{}
 
 func (v *WebAppCustomValidator) ValidateCreate(
-    ctx context.Context, obj runtime.Object,
-) error {
-    webapp, ok := obj.(*myappv1alpha1.WebApp)
-    if !ok {
-        return apierrors.NewBadRequest(
-            fmt.Sprintf("expected a WebApp but got %T", obj))
-    }
-    return v.validateWebApp(webapp)
+    _ context.Context, obj *myappv1alpha1.WebApp,
+) (admission.Warnings, error) {
+    return nil, validateWebApp(obj)
 }
 
 func (v *WebAppCustomValidator) ValidateUpdate(
-    ctx context.Context, oldObj, newObj runtime.Object,
-) error {
-    newWebapp, ok := newObj.(*myappv1alpha1.WebApp)
-    if !ok {
-        return apierrors.NewBadRequest(
-            fmt.Sprintf("expected a WebApp but got %T", newObj))
-    }
-
-    // 校验 immutable 字段
-    oldWebapp, ok := oldObj.(*myappv1alpha1.WebApp)
-    if ok && oldWebapp.Spec.Image != newWebapp.Spec.Image {
-        // 示例：image 字段不可变（实际场景可能允许）
-        return apierrors.NewInvalid(
-            newWebapp.GroupVersionKind().GroupKind(),
-            newWebapp.Name,
-            field.Invalid(
-                field.NewPath("spec", "image"),
-                newWebapp.Spec.Image,
-                "image is immutable after creation"))
-    }
-
-    return v.validateWebApp(newWebapp)
+    _ context.Context, _, newObj *myappv1alpha1.WebApp,
+) (admission.Warnings, error) {
+    return nil, validateWebApp(newObj)
 }
 
 func (v *WebAppCustomValidator) ValidateDelete(
-    ctx context.Context, obj runtime.Object,
-) error {
-    return nil // 允许删除
+    _ context.Context, _ *myappv1alpha1.WebApp,
+) (admission.Warnings, error) {
+    return nil, nil
 }
 
-func (v *WebAppCustomValidator) validateWebApp(webapp *myappv1alpha1.WebApp) error {
+func validateWebApp(webapp *myappv1alpha1.WebApp) error {
     var allErrs field.ErrorList
 
-    // 校验 image
-    if webapp.Spec.Image == "" {
-        allErrs = append(allErrs, field.Required(
-            field.NewPath("spec", "image"),
-            "image is required"))
-    }
+    if webapp.Spec.Image == "" { /* ... Required error ... */ }
+    if webapp.Spec.Replicas != nil && (*webapp.Spec.Replicas < 0 || *webapp.Spec.Replicas > 100) { /* ... */ }
+    if webapp.Spec.Port < 1 || webapp.Spec.Port > 65535 { /* ... */ }
+    for i, env := range webapp.Spec.Env { /* ... 正则校验 env name ... */ }
+    if webapp.Spec.EnableIngress && webapp.Spec.IngressHost == "" { /* ... Required error ... */ }
 
-    // 校验 replicas 范围
-    if webapp.Spec.Replicas < 0 || webapp.Spec.Replicas > 100 {
-        allErrs = append(allErrs, field.Invalid(
-            field.NewPath("spec", "replicas"),
-            webapp.Spec.Replicas,
-            "replicas must be between 0 and 100"))
-    }
-
-    // 校验 port 范围
-    if webapp.Spec.Port < 1 || webapp.Spec.Port > 65535 {
-        allErrs = append(allErrs, field.Invalid(
-            field.NewPath("spec", "port"),
-            webapp.Spec.Port,
-            "port must be between 1 and 65535"))
-    }
-
-    // 校验 env 变量名
-    for i, env := range webapp.Spec.Env {
-        if !isValidEnvName(env.Name) {
-            allErrs = append(allErrs, field.Invalid(
-                field.NewPath("spec", "env").Index(i).Child("name"),
-                env.Name,
-                "env name must match ^[A-Za-z_][A-Za-z0-9_]*$"))
-        }
-    }
-
-    // Ingress host 校验
-    if webapp.Spec.EnableIngress && webapp.Spec.IngressHost == "" {
-        allErrs = append(allErrs, field.Required(
-            field.NewPath("spec", "ingressHost"),
-            "ingressHost is required when enableIngress is true"))
-    }
-
-    if len(allErrs) == 0 {
-        return nil
-    }
-    return apierrors.NewInvalid(
-        webapp.GroupVersionKind().GroupKind(),
-        webapp.Name, allErrs)
-}
-
-func isValidEnvName(name string) bool {
-    matched, _ := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*$`, name)
-    return matched
+    if len(allErrs) == 0 { return nil }
+    return fmt.Errorf("validation failed: %v", allErrs.ToAggregate().Error())
 }
 ```
 
 #### 7.5.3 Webhook 注册
 
 ```go
-// cmd/main.go 中注册
-func setupWebhooks(mgr ctrl.Manager) error {
-    if err := ctrl.NewWebhookManagedBy(mgr).
-        For(&myappv1alpha1.WebApp{}).
-        WithDefaulter(&webhookv1alpha1.WebAppCustomDefaulter{
-            Client: mgr.GetClient(),
-        }).
-        WithValidator(&webhookv1alpha1.WebAppCustomValidator{
-            Client: mgr.GetClient(),
-        }).
-        Complete(); err != nil {
-        return fmt.Errorf("unable to create webhook: %w", err)
-    }
-    return nil
+// internal/webhook/v1alpha1/webapp_webhook.go
+func SetupWebAppWebhookWithManager(mgr ctrl.Manager) error {
+    return ctrl.NewWebhookManagedBy(mgr, &myappv1alpha1.WebApp{}).
+        WithValidator(&WebAppCustomValidator{}).
+        WithDefaulter(&WebAppCustomDefaulter{}).
+        Complete()
+}
+
+// cmd/main.go 中通过 ENABLE_WEBHOOKS 环境变量控制
+if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+    if err := webhookv1alpha1.SetupWebAppWebhookWithManager(mgr); err != nil { ... }
 }
 ```
 
@@ -1047,61 +927,57 @@ func setupWebhooks(mgr ctrl.Manager) error {
 
 ## 8. 实现路线图
 
-### Phase 1: MVP (1-2 周)
+### Phase 1: MVP -- 已完成
 
 **目标**：可运行的最小 Operator，实现 CRD 创建 → 子资源编排
 
-| 任务            | 产出                                       | 预计时间  |
-| --------------- | ------------------------------------------ | --------- |
-| 项目初始化      | `kubebuilder init` 完成项目搭建            | 0.5 天    |
-| CRD 定义        | `webapp_types.go` + `make manifests`       | 0.5 天    |
-| Reconcile 骨架  | 空 Reconcile + Get CR + 日志               | 0.5 天    |
-| Deployment 协调 | 从 spec 构建并 CreateOrUpdate Deployment   | 1 天      |
-| Service 协调    | 创建 ClusterIP Service                     | 0.5 天    |
-| 基本 Status     | 设置 Phase = Running                       | 0.5 天    |
-| 本地测试        | `make install` + `make run` + 创建 CR 验证 | 0.5 天    |
-| **小计**        |                                            | **~4 天** |
+| 任务            | 产出                                       | 状态 |
+| --------------- | ------------------------------------------ | ---- |
+| 项目初始化      | `kubebuilder init` 完成项目搭建            | Done |
+| CRD 定义        | `webapp_types.go` + `make manifests`       | Done |
+| Reconcile 骨架  | 完整 Reconcile + Get CR + 日志             | Done |
+| Deployment 协调 | 从 spec 构建并 Create/Update Deployment    | Done |
+| Service 协调    | 创建 ClusterIP/NodePort/LoadBalancer       | Done |
+| 基本 Status     | Phase 状态机 + readyReplicas               | Done |
+| 编译验证        | `make generate && make manifests && make build` 通过 | Done |
 
 **Phase 1 验收标准**：
 
 ```bash
 kubectl apply -f config/samples/myapp_v1alpha1_webapp.yaml
-kubectl get webapp my-webapp
-# NAME       PHASE    REPLICAS  AGE
-# my-webapp  Running  1         30s
+kubectl get webapp webapp-sample
+# NAME            PHASE    REPLICAS  SERVICE  AGE
+# webapp-sample   Running  3         webapp-sample  30s
 
-kubectl get deploy,svc -l app.kubernetes.io/instance=my-webapp
+kubectl get deploy,svc -l app.kubernetes.io/instance=webapp-sample
 # 能看到 Deployment 和 Service
 ```
 
-### Phase 2: 进阶功能 (2-3 周)
+### Phase 2: 进阶功能 -- 已完成
 
-| 任务               | 产出                                   | 预计时间  |
-| ------------------ | -------------------------------------- | --------- |
-| Finalizer          | 优雅删除 + 外部资源清理                | 1 天      |
-| Status Conditions  | K8s 标准 conditions (Ready, Available) | 1 天      |
-| Ingress 协调       | 可选创建 Ingress 资源                  | 0.5 天    |
-| OwnerReference     | 级联删除 (Controller GC)               | 0.5 天    |
-| Mutating Webhook   | 默认值注入 + 标签自动添加              | 1 天      |
-| Validating Webhook | spec 校验 + immutable 字段             | 1 天      |
-| 单元测试           | envtest 控制器测试 (覆盖率 > 60%)      | 2 天      |
-| Events             | 关键操作发 K8s Events                  | 0.5 天    |
-| **小计**           |                                        | **~8 天** |
+| 任务               | 产出                                   | 状态 |
+| ------------------ | -------------------------------------- | ---- |
+| Finalizer          | 优雅删除 + 外部资源清理                | Done |
+| Status Conditions  | K8s 标准 conditions (Available, Progressing, Degraded) | Done |
+| Ingress 协调       | 可选创建/删除 Ingress 资源             | Done |
+| OwnerReference     | 级联删除 (Controller GC)               | Done |
+| Mutating Webhook   | 默认值注入 + 标签自动添加              | Done |
+| Validating Webhook | spec 校验 (image/replicas/port/env/ingressHost) | Done |
+| Events             | 关键操作发 K8s Events                  | Done |
+| 单元测试           | envtest 控制器测试 (脚手架已生成)      | TODO |
 
-### Phase 3: 生产级 (2-3 周)
+### Phase 3: 生产级 (待实现)
 
-| 任务               | 产出                                    | 预计时间    |
+| 任务               | 产出                                    | 状态        |
 | ------------------ | --------------------------------------- | ----------- |
-| Leader Election    | 多副本高可用部署                        | 0.5 天      |
-| Prometheus Metrics | 自定义指标 (reconcile_duration, errors) | 1 天        |
-| 结构化日志         | 日志级别、key-value 结构化              | 0.5 天      |
-| RBAC 精细化        | 最小权限原则                            | 0.5 天      |
-| Graceful Shutdown  | 优雅退出 + context 传播                 | 0.5 天      |
-| SSA 迁移           | Server-Side Apply 替代 Update           | 1 天        |
-| E2E 测试           | Kind 集群端到端测试                     | 2 天        |
-| CI/CD              | GitHub Actions + golangci-lint          | 1 天        |
-| 文档               | README + 使用示例 + 故障排查            | 1 天        |
-| **小计**           |                                         | **~8.5 天** |
+| Leader Election    | 多副本高可用部署 (框架已支持)           | 框架就绪    |
+| Prometheus Metrics | 自定义指标 (reconcile_duration, errors) | TODO        |
+| 结构化日志         | 日志级别、key-value 结构化 (已使用 zap) | 框架就绪    |
+| RBAC 精细化        | 最小权限原则 (controller-gen 已生成)    | Done        |
+| Graceful Shutdown  | 优雅退出 + context 传播 (框架内置)      | 框架就绪    |
+| SSA 迁移           | Server-Side Apply 替代 Update           | TODO        |
+| E2E 测试           | Kind 集群端到端测试 (脚手架已生成)      | TODO        |
+| CI/CD              | GitHub Actions + golangci-lint (已生成) | 框架就绪    |
 
 ---
 
@@ -1417,76 +1293,69 @@ func main() {
     }
 
     // 注册 Controller
-    if err = (&controller.WebAppReconciler{
+    if err := (&controller.WebAppReconciler{
         Client:   mgr.GetClient(),
         Scheme:   mgr.GetScheme(),
         Recorder: mgr.GetEventRecorderFor("webapp-operator"),
     }).SetupWithManager(mgr); err != nil {
-        setupLog.Error(err, "unable to create controller", "controller", "WebApp")
+        setupLog.Error(err, "Failed to create controller", "controller", "webapp")
         os.Exit(1)
     }
 
-    // 注册 Webhook
-    if err = setupWebhooks(mgr); err != nil {
-        setupLog.Error(err, "unable to create webhook")
-        os.Exit(1)
+    // 注册 Webhook（可通过 ENABLE_WEBHOOKS=false 禁用，便于本地开发）
+    if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+        if err := webhookv1alpha1.SetupWebAppWebhookWithManager(mgr); err != nil {
+            setupLog.Error(err, "Failed to create webhook", "webhook", "WebApp")
+            os.Exit(1)
+        }
     }
 
     // 健康检查
     if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-        setupLog.Error(err, "unable to set up health check")
+        setupLog.Error(err, "Failed to set up health check")
         os.Exit(1)
     }
     if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-        setupLog.Error(err, "unable to set up ready check")
+        setupLog.Error(err, "Failed to set up ready check")
         os.Exit(1)
     }
 
-    setupLog.Info("starting manager")
+    setupLog.Info("Starting manager")
     if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-        setupLog.Error(err, "problem running manager")
+        setupLog.Error(err, "Failed to run manager")
         os.Exit(1)
     }
-}
-
-func setupWebhooks(mgr ctrl.Manager) error {
-    if err := ctrl.NewWebhookManagedBy(mgr).
-        For(&myappv1alpha1.WebApp{}).
-        WithDefaulter(&webhookv1alpha1.WebAppCustomDefaulter{
-            Client: mgr.GetClient(),
-        }).
-        WithValidator(&webhookv1alpha1.WebAppCustomValidator{
-            Client: mgr.GetClient(),
-        }).
-        Complete(); err != nil {
-        return err
-    }
-    return nil
 }
 ```
 
-## 附录 B: Makefile 核心命令速查
+## 附录 B: 快速上手
 
-```makefile
-# 初始化项目
-kubebuilder init --domain example.com --repo github.com/example/webapp-operator
+### 前置条件
 
-# 创建 API (CRD)
-kubebuilder create api --group myapp --version v1alpha1 --kind WebApp --resource --controller
+- Go 1.25+
+- Kubebuilder v4
+- 一个 Kubernetes 集群（可以使用 kind 创建本地集群）
 
-# 创建 Webhook
-kubebuilder create webhook --group myapp --version v1alpha1 --kind WebApp \
-  --defaulting --programmatic-validation
+### 开发命令速查
 
+```bash
 # 生成 CRD 和代码
 make manifests        # 生成 CRD YAML + RBAC
 make generate         # 生成 deepcopy 代码
+make build            # 编译二进制
 
 # 安装 CRD 到集群
 make install
 
-# 本地运行 (不走集群)
-make run
+# 本地运行（禁用 Webhook 便于开发）
+ENABLE_WEBHOOKS=false make run
+
+# 创建示例 CR
+kubectl apply -f config/samples/myapp_v1alpha1_webapp.yaml
+
+# 查看状态
+kubectl get webapp
+kubectl get deploy,svc -l app.kubernetes.io/instance=webapp-sample
 
 # 部署到集群
 make docker-build docker-push IMG=<registry>/webapp-operator:v0.1.0
@@ -1499,6 +1368,15 @@ make test-e2e         # 端到端测试 (需要 kind)
 # 清理
 make undeploy
 make uninstall
+```
+
+### 项目初始化回放（已执行）
+
+```bash
+kubebuilder init --domain example.com --repo github.com/example/webapp-operator
+kubebuilder create api --group myapp --version v1alpha1 --kind WebApp --resource --controller
+kubebuilder create webhook --group myapp --version v1alpha1 --kind WebApp \
+  --defaulting --programmatic-validation
 ```
 
 ---

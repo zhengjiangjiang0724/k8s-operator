@@ -1,0 +1,146 @@
+# Default values for webapp-operator.
+# All defaults are production-grade — override only what your environment
+# demands.
+
+# -- Override the chart name in resource names.
+nameOverride: ""
+# -- Override the fully qualified app name in resource names.
+fullnameOverride: ""
+
+image:
+  # -- Container image repository. Use a private mirror in production.
+  repository: ghcr.io/example/webapp-operator
+  # -- Image tag. Pin to a digest in production for supply-chain safety.
+  tag: ""  # defaults to .Chart.AppVersion
+  # -- Pull policy. "IfNotPresent" is safer than "Always" once you pin tags.
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets for private registries.
+imagePullSecrets: []
+# - name: my-registry-creds
+
+# -- Number of replicas. Must be >=2 for HA; leader election only takes
+# over when there is a healthy stand-by.
+replicaCount: 2
+
+controller:
+  # -- Concurrent reconciles per controller. Increase if
+  # `controller_runtime_workqueue_depth` is consistently > 0.
+  maxConcurrentReconciles: 3
+  # -- Enable leader election. Required when replicaCount > 1.
+  leaderElect: true
+  # -- Pass extra args to the manager binary.
+  extraArgs: []
+  # - --enable-pprof=true
+  # -- Inject extra env vars.
+  extraEnv: []
+
+# -- Hardened to Pod Security Standard "restricted".
+securityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop: ["ALL"]
+
+# -- Resource requests/limits. Sized for ~few hundred WebApp CRs; tune
+# from real metrics (see docs/SLO.md).
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# -- Node affinity / nodeSelector / tolerations for placement.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- Spread Pods across nodes for HA.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+# -- 30s gives leader-election lease release and in-flight reconciles
+# time to wind down cleanly.
+terminationGracePeriodSeconds: 30
+
+# -- PodDisruptionBudget protects against voluntary disruption (node
+# drain, cluster-autoscaler scale-down).
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+webhook:
+  # -- Enable admission + conversion webhooks. Requires cert-manager
+  # unless you provide your own cert.
+  enabled: true
+  # -- failurePolicy: "Fail" rejects requests when the webhook is down
+  # (recommended for correctness). Switch to "Ignore" only during incidents.
+  failurePolicy: Fail
+  service:
+    port: 443
+
+# Certificate management.
+certManager:
+  # -- Use cert-manager to issue + rotate the webhook serving cert.
+  # If false, you must provide secret `<release>-webhook-server-cert`
+  # with tls.crt / tls.key keys yourself.
+  enabled: true
+  # -- Issuer ref. Self-signed by default for simplicity; in production
+  # use an internal CA Issuer.
+  issuerRef:
+    kind: Issuer
+    name: ""  # defaults to <release>-selfsigned-issuer
+
+# Metrics + Prometheus integration.
+metrics:
+  # -- Enable the metrics service (always recommended).
+  enabled: true
+  # -- Port the metrics server binds to. HTTPS only.
+  port: 8443
+  serviceMonitor:
+    # -- Create a Prometheus Operator ServiceMonitor.
+    enabled: true
+    # -- Scrape interval.
+    interval: 30s
+    # -- Extra labels for ServiceMonitor (e.g. release: prometheus).
+    labels: {}
+    # -- Trust the in-cluster CA. In production, mount the cert-manager
+    # CA bundle and set this to false.
+    insecureSkipVerify: true
+
+# NetworkPolicy — restrict who can reach the webhook + metrics ports.
+networkPolicy:
+  # -- Enable NetworkPolicy.
+  enabled: true
+  # -- Allow metrics scrapes from namespaces matching these labels.
+  metricsFrom:
+    - namespaceSelector:
+        matchLabels:
+          metrics: enabled
+  # -- Allow webhook calls from namespaces matching these labels.
+  # kube-apiserver lives in kube-system — that namespace must carry
+  # the label, or admission will fail closed.
+  webhooksFrom:
+    - namespaceSelector:
+        matchLabels:
+          webhooks: enabled
+
+# CRD installation strategy.
+crds:
+  # -- If true, the chart's templates render the CRD too. Helm 3 also
+  # auto-installs anything under crds/ on first install but does NOT
+  # upgrade them — controlling via this flag is more flexible.
+  install: true
+  # -- Add a "helm.sh/resource-policy: keep" annotation so `helm uninstall`
+  # does not drop CRs and their owned resources accidentally.
+  keep: true

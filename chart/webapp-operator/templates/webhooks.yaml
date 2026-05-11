@@ -1,0 +1,87 @@
+{{- if .Values.webhook.enabled }}
+{{- $svc := include "webapp-operator.webhookServiceName" . -}}
+{{- $ns := .Release.Namespace -}}
+{{- $caInjectAnnotation := dict -}}
+{{- if .Values.certManager.enabled -}}
+{{- $_ := set $caInjectAnnotation "cert-manager.io/inject-ca-from" (printf "%s/%s" $ns (include "webapp-operator.certificateName" .)) -}}
+{{- end -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "webapp-operator.fullname" . }}-mutating
+  labels:
+    {{- include "webapp-operator.labels" . | nindent 4 }}
+  {{- with $caInjectAnnotation }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+webhooks:
+  - name: mwebapp-v1alpha1.kb.io
+    clientConfig:
+      service:
+        name: {{ $svc }}
+        namespace: {{ $ns }}
+        path: /mutate-myapp-example-com-v1alpha1-webapp
+    rules:
+      - apiGroups: ["myapp.example.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["webapps"]
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+  - name: mwebapp-v1beta1.kb.io
+    clientConfig:
+      service:
+        name: {{ $svc }}
+        namespace: {{ $ns }}
+        path: /mutate-myapp-example-com-v1beta1-webapp
+    rules:
+      - apiGroups: ["myapp.example.com"]
+        apiVersions: ["v1beta1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["webapps"]
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "webapp-operator.fullname" . }}-validating
+  labels:
+    {{- include "webapp-operator.labels" . | nindent 4 }}
+  {{- with $caInjectAnnotation }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+webhooks:
+  - name: vwebapp-v1alpha1.kb.io
+    clientConfig:
+      service:
+        name: {{ $svc }}
+        namespace: {{ $ns }}
+        path: /validate-myapp-example-com-v1alpha1-webapp
+    rules:
+      - apiGroups: ["myapp.example.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["webapps"]
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+  - name: vwebapp-v1beta1.kb.io
+    clientConfig:
+      service:
+        name: {{ $svc }}
+        namespace: {{ $ns }}
+        path: /validate-myapp-example-com-v1beta1-webapp
+    rules:
+      - apiGroups: ["myapp.example.com"]
+        apiVersions: ["v1beta1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["webapps"]
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+{{- end }}

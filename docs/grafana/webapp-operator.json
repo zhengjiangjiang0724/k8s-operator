@@ -1,0 +1,299 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Production dashboard for WebApp Operator. Panels are organized into rows: Health (SLO overview), Reconcile (controller loop), Sub-resources (SSA calls), Webhooks (admission), and State (per-WebApp gauges).",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Health (SLO overview)",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "Reconcile success rate (5m)",
+      "id": 1,
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(rate(webapp_reconcile_total{result=\"success\"}[5m])) / sum(rate(webapp_reconcile_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 0.98},
+              {"color": "green", "value": 0.995}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Reconcile P99 latency (5m)",
+      "id": 2,
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 1},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(webapp_reconcile_duration_seconds_bucket[5m])))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 0.5},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      },
+      "options": {"colorMode": "background", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "WebApp replicas availability",
+      "id": 3,
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(webapp_replicas_ready) / clamp_min(sum(webapp_replicas_desired), 1)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 0.95},
+              {"color": "green", "value": 0.99}
+            ]
+          }
+        }
+      },
+      "options": {"colorMode": "background", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "WebApps by phase",
+      "id": 4,
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 1},
+      "targets": [
+        {
+          "expr": "sum by (phase) (webapp_phase) > 0",
+          "legendFormat": "{{phase}}",
+          "refId": "A"
+        }
+      ],
+      "options": {"colorMode": "value", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+
+    {
+      "type": "row",
+      "title": "Reconcile loop",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 6},
+      "id": 200,
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Reconcile rate by result",
+      "id": 5,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 7},
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(webapp_reconcile_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Reconcile duration percentiles",
+      "id": 6,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 7},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(webapp_reconcile_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(webapp_reconcile_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(webapp_reconcile_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+
+    {
+      "type": "row",
+      "title": "Sub-resource operations",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 15},
+      "id": 300,
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "SSA rate by kind & result",
+      "id": 7,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {
+          "expr": "sum by (kind, result) (rate(webapp_subresource_operations_total[5m]))",
+          "legendFormat": "{{kind}} {{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Sub-resource P99 latency",
+      "id": 8,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, kind) (rate(webapp_subresource_operation_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+
+    {
+      "type": "row",
+      "title": "Admission webhooks",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 24},
+      "id": 400,
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Webhook rate by result",
+      "id": 9,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 25},
+      "targets": [
+        {
+          "expr": "sum by (webhook, result) (rate(webapp_webhook_requests_total[5m]))",
+          "legendFormat": "{{webhook}} {{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Webhook P99 latency",
+      "id": 10,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 25},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, webhook) (rate(webapp_webhook_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{webhook}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 0.05},
+              {"color": "red", "value": 0.5}
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "type": "row",
+      "title": "Per-WebApp state",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 33},
+      "id": 500,
+      "collapsed": false
+    },
+    {
+      "type": "table",
+      "title": "WebApp inventory",
+      "id": 11,
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 34},
+      "targets": [
+        {
+          "expr": "webapp_info",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {"Time": true, "__name__": true, "Value": true, "instance": true, "job": true},
+            "indexByName": {"namespace": 0, "name": 1, "phase": 2, "image": 3}
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["webapp-operator", "kubernetes"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "WebApp Operator",
+  "uid": "webapp-operator",
+  "version": 1
+}

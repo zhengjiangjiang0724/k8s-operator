@@ -1,0 +1,33 @@
+{{- if and .Values.webhook.enabled .Values.certManager.enabled }}
+{{- if not .Values.certManager.issuerRef.name }}
+{{/* Default to a self-signed Issuer so the chart works out of the box.
+     For production, override certManager.issuerRef.name with your CA. */}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "webapp-operator.issuerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webapp-operator.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "webapp-operator.certificateName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webapp-operator.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "webapp-operator.webhookCertSecretName" . }}
+  dnsNames:
+    - {{ include "webapp-operator.webhookServiceName" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "webapp-operator.webhookServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: {{ .Values.certManager.issuerRef.kind }}
+    name: {{ include "webapp-operator.issuerName" . }}
+  # Rotate ~14 days before expiry; default duration is 90d.
+  renewBefore: 336h
+{{- end }}

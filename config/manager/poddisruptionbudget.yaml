@@ -1,0 +1,19 @@
+# PodDisruptionBudget ensures voluntary disruptions (node drain, cluster
+# autoscaler scale-down, kubectl drain) cannot take down all controller
+# replicas simultaneously. Involuntary disruptions (node crash) are not
+# covered — that is what replicas + topologySpread address.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: controller-manager
+  namespace: system
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: k8s-operator

@@ -1,0 +1,35 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} installed.
+
+Verify:
+
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+{{- if .Values.webhook.enabled }}
+
+The admission + conversion webhooks require cert-manager{{- if .Values.certManager.enabled }} (handled by this chart){{- end }}.
+First reconciles will fail until the webhook Pod is Ready and cert-manager
+has issued the serving cert. Watch:
+
+  kubectl -n {{ .Release.Namespace }} get certificate {{ include "webapp-operator.certificateName" . }}
+{{- end }}
+
+{{- if .Values.networkPolicy.enabled }}
+
+NetworkPolicy is enabled. For metrics to be scraped, label the namespace
+hosting Prometheus:
+
+  kubectl label ns <prometheus-ns> metrics=enabled
+
+For admission to work, kube-apiserver's namespace MUST carry the
+webhooks label. On most distributions it lives in kube-system:
+
+  kubectl label ns kube-system webhooks=enabled
+{{- end }}
+
+Create a sample WebApp:
+
+  kubectl apply -f https://raw.githubusercontent.com/example/webapp-operator/main/config/samples/myapp_v1alpha1_webapp.yaml
+
+Dashboards + runbooks:
+
+  https://github.com/example/webapp-operator/tree/main/docs

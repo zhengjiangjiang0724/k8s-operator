@@ -1,0 +1,544 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: webapps.myapp.example.com
+spec:
+  group: myapp.example.com
+  names:
+    categories:
+    - myapp
+    kind: WebApp
+    listKind: WebAppList
+    plural: webapps
+    shortNames:
+    - wa
+    singular: webapp
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Current phase
+      jsonPath: .status.phase
+      name: Phase
+      type: string
+    - description: Ready replicas
+      jsonPath: .status.readyReplicas
+      name: Replicas
+      type: integer
+    - description: Service name
+      jsonPath: .status.serviceName
+      name: Service
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: WebApp is the Schema for the webapps API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of WebApp.
+            properties:
+              enableIngress:
+                default: false
+                description: enableIngress controls whether an Ingress resource is
+                  created.
+                type: boolean
+              env:
+                description: env is a list of environment variables to set in the
+                  container.
+                items:
+                  description: EnvVar represents an environment variable to set in
+                    the container.
+                  properties:
+                    name:
+                      description: name is the environment variable name.
+                      minLength: 1
+                      pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      type: string
+                    value:
+                      description: value is the environment variable value.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              healthCheck:
+                description: healthCheck configures the liveness and readiness probes.
+                properties:
+                  initialDelaySeconds:
+                    default: 10
+                    description: |-
+                      initialDelaySeconds is the number of seconds after the container starts
+                      before the probe is initiated.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  path:
+                    default: /healthz
+                    description: path is the HTTP path for the health check probe.
+                    type: string
+                  periodSeconds:
+                    default: 10
+                    description: periodSeconds is how often (in seconds) to perform
+                      the probe.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                type: object
+              image:
+                description: image is the container image for the web application.
+                minLength: 1
+                type: string
+              ingressHost:
+                description: |-
+                  ingressHost is the hostname for the Ingress resource.
+                  Required when enableIngress is true.
+                pattern: ^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$
+                type: string
+              port:
+                default: 8080
+                description: port is the container port to expose.
+                format: int32
+                maximum: 65535
+                minimum: 1
+                type: integer
+              replicas:
+                default: 1
+                description: replicas is the number of desired pod replicas.
+                format: int32
+                maximum: 100
+                minimum: 0
+                type: integer
+              resources:
+                description: resources defines CPU and memory resource requirements.
+                properties:
+                  limits:
+                    description: limits specifies the maximum resources allowed.
+                    properties:
+                      cpu:
+                        description: cpu specifies the CPU resource quantity (e.g.
+                          "100m", "1").
+                        pattern: ^[0-9]+(\.[0-9]+)?(m|)$
+                        type: string
+                      memory:
+                        description: memory specifies the memory resource quantity
+                          (e.g. "128Mi", "1Gi").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)$
+                        type: string
+                    type: object
+                  requests:
+                    description: requests specifies the minimum resources required.
+                    properties:
+                      cpu:
+                        description: cpu specifies the CPU resource quantity (e.g.
+                          "100m", "1").
+                        pattern: ^[0-9]+(\.[0-9]+)?(m|)$
+                        type: string
+                      memory:
+                        description: memory specifies the memory resource quantity
+                          (e.g. "128Mi", "1Gi").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)$
+                        type: string
+                    type: object
+                type: object
+              serviceType:
+                default: ClusterIP
+                description: serviceType specifies the Kubernetes Service type.
+                enum:
+                - ClusterIP
+                - NodePort
+                - LoadBalancer
+                type: string
+              updateStrategy:
+                default: RollingUpdate
+                description: updateStrategy controls the deployment update strategy.
+                enum:
+                - RollingUpdate
+                - Recreate
+                type: string
+            required:
+            - image
+            type: object
+          status:
+            description: status defines the observed state of WebApp.
+            properties:
+              conditions:
+                description: conditions represent the current state of the WebApp
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              desiredReplicas:
+                description: desiredReplicas is the desired number of pod replicas.
+                format: int32
+                type: integer
+              ingressURL:
+                description: ingressURL is the Ingress URL if Ingress is enabled.
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+              phase:
+                description: phase represents the current lifecycle phase of the WebApp.
+                enum:
+                - Pending
+                - Creating
+                - Running
+                - Updating
+                - Failed
+                - Deleting
+                type: string
+              readyReplicas:
+                description: readyReplicas is the number of pods with ready status.
+                format: int32
+                type: integer
+              serviceName:
+                description: serviceName is the name of the created Service.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: false
+    subresources:
+      status: {}
+  - additionalPrinterColumns:
+    - description: Current phase
+      jsonPath: .status.phase
+      name: Phase
+      type: string
+    - description: Ready replicas
+      jsonPath: .status.readyReplicas
+      name: Replicas
+      type: integer
+    - description: Service name
+      jsonPath: .status.serviceName
+      name: Service
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: WebApp is the Schema for the webapps API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of WebApp.
+            properties:
+              enableIngress:
+                default: false
+                description: enableIngress controls whether an Ingress resource is
+                  created.
+                type: boolean
+              env:
+                description: env is a list of environment variables to set in the
+                  container.
+                items:
+                  description: EnvVar represents an environment variable to set in
+                    the container.
+                  properties:
+                    name:
+                      description: name is the environment variable name.
+                      minLength: 1
+                      pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      type: string
+                    value:
+                      description: value is the environment variable value.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              healthCheck:
+                description: healthCheck configures the liveness and readiness probes.
+                properties:
+                  initialDelaySeconds:
+                    default: 10
+                    description: |-
+                      initialDelaySeconds is the number of seconds after the container starts
+                      before the probe is initiated.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  path:
+                    default: /healthz
+                    description: path is the HTTP path for the health check probe.
+                    type: string
+                  periodSeconds:
+                    default: 10
+                    description: periodSeconds is how often (in seconds) to perform
+                      the probe.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                type: object
+              image:
+                description: image is the container image for the web application.
+                minLength: 1
+                type: string
+              ingressHost:
+                description: |-
+                  ingressHost is the hostname for the Ingress resource.
+                  Required when enableIngress is true.
+                pattern: ^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$
+                type: string
+              port:
+                default: 8080
+                description: port is the container port to expose.
+                format: int32
+                maximum: 65535
+                minimum: 1
+                type: integer
+              replicas:
+                default: 1
+                description: replicas is the number of desired pod replicas.
+                format: int32
+                maximum: 100
+                minimum: 0
+                type: integer
+              resources:
+                description: resources defines CPU and memory resource requirements.
+                properties:
+                  limits:
+                    description: limits specifies the maximum resources allowed.
+                    properties:
+                      cpu:
+                        description: cpu specifies the CPU resource quantity (e.g.
+                          "100m", "1").
+                        pattern: ^[0-9]+(\.[0-9]+)?(m|)$
+                        type: string
+                      memory:
+                        description: memory specifies the memory resource quantity
+                          (e.g. "128Mi", "1Gi").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)$
+                        type: string
+                    type: object
+                  requests:
+                    description: requests specifies the minimum resources required.
+                    properties:
+                      cpu:
+                        description: cpu specifies the CPU resource quantity (e.g.
+                          "100m", "1").
+                        pattern: ^[0-9]+(\.[0-9]+)?(m|)$
+                        type: string
+                      memory:
+                        description: memory specifies the memory resource quantity
+                          (e.g. "128Mi", "1Gi").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)$
+                        type: string
+                    type: object
+                type: object
+              serviceType:
+                default: ClusterIP
+                description: serviceType specifies the Kubernetes Service type.
+                enum:
+                - ClusterIP
+                - NodePort
+                - LoadBalancer
+                type: string
+              updateStrategy:
+                default: RollingUpdate
+                description: updateStrategy controls the deployment update strategy.
+                enum:
+                - RollingUpdate
+                - Recreate
+                type: string
+            required:
+            - image
+            type: object
+          status:
+            description: status defines the observed state of WebApp.
+            properties:
+              conditions:
+                description: conditions represent the current state of the WebApp
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              desiredReplicas:
+                description: desiredReplicas is the desired number of pod replicas.
+                format: int32
+                type: integer
+              ingressURL:
+                description: ingressURL is the Ingress URL if Ingress is enabled.
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+              phase:
+                description: phase represents the current lifecycle phase of the WebApp.
+                enum:
+                - Pending
+                - Creating
+                - Running
+                - Updating
+                - Failed
+                - Deleting
+                type: string
+              readyReplicas:
+                description: readyReplicas is the number of pods with ready status.
+                format: int32
+                type: integer
+              serviceName:
+                description: serviceName is the name of the created Service.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

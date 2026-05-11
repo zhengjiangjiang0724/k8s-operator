@@ -1,0 +1,30 @@
+apiVersion: v2
+name: webapp-operator
+description: |
+  Kubernetes operator that manages WebApp custom resources, materializing
+  them as Deployment + Service + (optional) Ingress with one-button defaults
+  and webhook-validated specs.
+type: application
+
+# version: SemVer of the chart packaging. Bump on any chart change.
+version: 0.1.0
+
+# appVersion: container image tag of the operator. Tracks Git tag.
+appVersion: "0.1.0"
+
+keywords:
+  - kubernetes
+  - operator
+  - webapp
+  - reconciler
+
+home: https://github.com/example/webapp-operator
+sources:
+  - https://github.com/example/webapp-operator
+
+annotations:
+  category: PaaS
+  # Renovate/Dependabot can pick these up to suggest upgrades.
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial chart with HA defaults
