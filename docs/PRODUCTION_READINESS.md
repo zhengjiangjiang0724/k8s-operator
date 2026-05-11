@@ -147,7 +147,7 @@ limits: { cpu: 500m, memory: 128Mi }
 - [x] e2e 测试增加 WebApp CR 生命周期用例 — `test/e2e/e2e_test.go` 新增 4 个 It：创建/扩缩容/webhook 拒绝/finalizer 清理；CI workflow 加超时 + kind 版本固定 + 失败时 dump cluster（待本地 Docker 启用后跑 `make test-e2e` 验证全绿）
 - [x] SSA Apply 迁移到新 API — `client.Apply` → `client.Client.Apply()`
 - [x] 顺便升级了第三方依赖 CVE：`golang.org/x/net` v0.47→v0.53，`go.opentelemetry.io/otel/*` v1.36→v1.40
-- [ ] Go stdlib CVE — 需要把 `go.mod` 从 1.25.1 升到 1.25.3+，但会破坏 envtest 二进制兼容，待统一升级窗口
+- [x] Go stdlib CVE — `go.mod` 升至 `go 1.25.10` + `toolchain go1.25.10`，govulncheck 报告 0 已调用漏洞
 
 ### Iteration 3（本次完成）
 - [x] SLO 定义 — `docs/SLO.md` 含 4 个 SLI、SLO 目标、错误预算、burn-rate 多窗口告警

@@ -1,12 +1,17 @@
 name: Security
 
-# Three independent security gates run on every push/PR:
+# Three independent security gates:
 #   1. govulncheck — Go module vulnerability scan (CVE database).
 #   2. Trivy filesystem — scan repo for misconfigs, secrets, vulnerable deps.
 #   3. Trivy image — scan a freshly built container image.
 #
-# Results are uploaded to GitHub Code Scanning (SARIF) so they appear in the
-# Security tab and as PR annotations. Failures block merge for HIGH/CRITICAL.
+# Results are exposed two ways:
+#   - SARIF uploaded to GitHub Code Scanning (Security tab + PR annotations).
+#     Requires Code Scanning enabled in repo Settings; the upload step is
+#     made non-blocking so a misconfigured repo doesn't fail CI.
+#   - SARIF stored as workflow artifact (always available, no special perms).
+#
+# This workflow does NOT block merge: scans inform, humans decide.
 
 on:
   push:
@@ -19,7 +24,8 @@ on:
 
 permissions:
   contents: read
-  security-events: write
+  security-events: write   # required for upload-sarif
+  actions: read            # required by codeql-action for context
 
 jobs:
   govulncheck:
@@ -27,13 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
-    # NOTE: govulncheck reports stdlib CVEs against whatever Go is in go.mod.
-    # `continue-on-error: true` keeps the scan informational rather than
-    # blocking — stdlib CVEs are addressed by bumping go.mod's `go` directive
-    # (then upgrading envtest binaries), which is a separate decision.
-    # Remove this flag once the Go bump cadence is established.
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -56,7 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write   # required to upload SARIF
+      security-events: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -74,15 +74,27 @@ jobs:
           # Misconfigs catches Dockerfile / kustomize issues; secrets catches
           # accidentally committed credentials.
           scanners: vuln,misconfig,secret
-          exit-code: "0"          # report findings but don't fail the job
+          exit-code: "0"          # informational; we review findings, not block
           ignore-unfixed: true    # don't fail on CVEs without a fix yet
 
       - name: Upload SARIF to Code Scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.10
+        # Make this non-blocking: if the repo doesn't have Code Scanning
+        # enabled (Settings → Security), the action returns "Resource not
+        # accessible by integration" which would otherwise fail the job.
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
+
+      - name: Upload SARIF as artifact (always available)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-sarif
+          path: trivy-fs.sarif
+          retention-days: 30
 
   trivy-image:
     name: Trivy image scan
@@ -90,6 +102,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -119,7 +132,16 @@ jobs:
 
       - name: Upload SARIF to Code Scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.10
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+      - name: Upload SARIF as artifact (always available)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-sarif
+          path: trivy-image.sarif
+          retention-days: 30

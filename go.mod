@@ -1,6 +1,6 @@
 module github.com/example/webapp-operator
 
-go 1.25.1
+go 1.25.10
 
 require (
 	github.com/onsi/ginkgo/v2 v2.27.2
