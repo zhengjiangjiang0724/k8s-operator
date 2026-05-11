@@ -45,7 +45,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Run govulncheck
-        uses: golang/govulncheck-action@7da72f730e37eeaad891fcff0a532d27ed737cd4 # v1.0.4
+        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
           go-version-file: go.mod
           repo-token: ${{ secrets.GITHUB_TOKEN }}
