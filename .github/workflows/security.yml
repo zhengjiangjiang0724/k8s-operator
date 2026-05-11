@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write
     # NOTE: govulncheck reports stdlib CVEs against whatever Go is in go.mod.
     # `continue-on-error: true` keeps the scan informational rather than
     # blocking — stdlib CVEs are addressed by bumping go.mod's `go` directive
@@ -48,6 +49,7 @@ jobs:
         uses: golang/govulncheck-action@7da72f730e37eeaad891fcff0a532d27ed737cd4 # v1.0.4
         with:
           go-version-file: go.mod
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
   trivy-fs:
     name: Trivy filesystem scan
