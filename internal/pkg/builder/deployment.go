@@ -137,6 +137,58 @@ func BuildDeployment(webapp *myappv1alpha1.WebApp) (*appsv1.Deployment, error) {
 		container.Env = envVars
 	}
 
+	// Set envFrom (ConfigMap/Secret → all keys as env vars)
+	if len(webapp.Spec.EnvFrom) > 0 {
+		envFrom := make([]corev1.EnvFromSource, 0, len(webapp.Spec.EnvFrom))
+		for _, ef := range webapp.Spec.EnvFrom {
+			src := corev1.EnvFromSource{}
+			if ef.ConfigMapRef != nil {
+				src.ConfigMapRef = &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ef.ConfigMapRef.Name},
+				}
+			}
+			if ef.SecretRef != nil {
+				src.SecretRef = &corev1.SecretEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ef.SecretRef.Name},
+				}
+			}
+			envFrom = append(envFrom, src)
+		}
+		container.EnvFrom = envFrom
+	}
+
+	// Set volumes + volumeMounts
+	if len(webapp.Spec.Volumes) > 0 {
+		volumes := make([]corev1.Volume, 0, len(webapp.Spec.Volumes))
+		mounts := make([]corev1.VolumeMount, 0, len(webapp.Spec.Volumes))
+
+		for _, v := range webapp.Spec.Volumes {
+			vol := corev1.Volume{Name: v.Name}
+			if v.ConfigMap != nil {
+				vol.VolumeSource = corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{Name: v.ConfigMap.Name},
+					},
+				}
+			}
+			if v.Secret != nil {
+				vol.VolumeSource = corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: v.Secret.Name,
+					},
+				}
+			}
+			volumes = append(volumes, vol)
+			mounts = append(mounts, corev1.VolumeMount{
+				Name:      v.Name,
+				MountPath: v.MountPath,
+			})
+		}
+
+		deploy.Spec.Template.Spec.Volumes = volumes
+		container.VolumeMounts = mounts
+	}
+
 	// Set resource requirements
 	if webapp.Spec.Resources != nil {
 		rr, err := buildResourceRequirements(webapp.Spec.Resources)

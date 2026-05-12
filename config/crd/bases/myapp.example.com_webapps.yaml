@@ -122,6 +122,38 @@ spec:
                   - name
                   type: object
                 type: array
+              envFrom:
+                description: |-
+                  envFrom populates environment variables from ConfigMap or Secret.
+                  All keys from the referenced resource become env vars.
+                items:
+                  description: EnvFromSource represents a source to populate environment
+                    variables from.
+                  properties:
+                    configMapRef:
+                      description: configMapRef references a ConfigMap to populate
+                        env vars from all keys.
+                      properties:
+                        name:
+                          description: name is the ConfigMap name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    secretRef:
+                      description: secretRef references a Secret to populate env vars
+                        from all keys.
+                      properties:
+                        name:
+                          description: name is the Secret name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  type: object
+                type: array
               healthCheck:
                 description: healthCheck configures the liveness and readiness probes.
                 properties:
@@ -216,6 +248,50 @@ spec:
                 - RollingUpdate
                 - Recreate
                 type: string
+              volumes:
+                description: volumes mounts ConfigMaps or Secrets as files into the
+                  container.
+                items:
+                  description: VolumeMount defines a volume to mount into the container.
+                  properties:
+                    configMap:
+                      description: |-
+                        configMap references a ConfigMap to mount as a volume.
+                        Mutually exclusive with secret.
+                      properties:
+                        name:
+                          description: name is the ConfigMap name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    mountPath:
+                      description: mountPath is the path inside the container where
+                        the volume is mounted.
+                      minLength: 1
+                      type: string
+                    name:
+                      description: name is a unique identifier for this volume mount.
+                      minLength: 1
+                      type: string
+                    secret:
+                      description: |-
+                        secret references a Secret to mount as a volume.
+                        Mutually exclusive with configMap.
+                      properties:
+                        name:
+                          description: name is the Secret name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  required:
+                  - mountPath
+                  - name
+                  type: object
+                type: array
             required:
             - image
             type: object
@@ -423,6 +499,38 @@ spec:
                   - name
                   type: object
                 type: array
+              envFrom:
+                description: |-
+                  envFrom populates environment variables from ConfigMap or Secret.
+                  All keys from the referenced resource become env vars.
+                items:
+                  description: EnvFromSource represents a source to populate environment
+                    variables from.
+                  properties:
+                    configMapRef:
+                      description: configMapRef references a ConfigMap to populate
+                        env vars from all keys.
+                      properties:
+                        name:
+                          description: name is the ConfigMap name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    secretRef:
+                      description: secretRef references a Secret to populate env vars
+                        from all keys.
+                      properties:
+                        name:
+                          description: name is the Secret name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  type: object
+                type: array
               healthCheck:
                 description: healthCheck configures the liveness and readiness probes.
                 properties:
@@ -517,6 +625,50 @@ spec:
                 - RollingUpdate
                 - Recreate
                 type: string
+              volumes:
+                description: volumes mounts ConfigMaps or Secrets as files into the
+                  container.
+                items:
+                  description: VolumeMount defines a volume to mount into the container.
+                  properties:
+                    configMap:
+                      description: |-
+                        configMap references a ConfigMap to mount as a volume.
+                        Mutually exclusive with secret.
+                      properties:
+                        name:
+                          description: name is the ConfigMap name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    mountPath:
+                      description: mountPath is the path inside the container where
+                        the volume is mounted.
+                      minLength: 1
+                      type: string
+                    name:
+                      description: name is a unique identifier for this volume mount.
+                      minLength: 1
+                      type: string
+                    secret:
+                      description: |-
+                        secret references a Secret to mount as a volume.
+                        Mutually exclusive with configMap.
+                      properties:
+                        name:
+                          description: name is the Secret name in the same namespace.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  required:
+                  - mountPath
+                  - name
+                  type: object
+                type: array
             required:
             - image
             type: object

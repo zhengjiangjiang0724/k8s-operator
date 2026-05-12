@@ -153,3 +153,66 @@ func TestConvertTo_ResourcesPartial(t *testing.T) {
 		t.Errorf("expected nil Limits, got %+v", hub.Spec.Resources.Limits)
 	}
 }
+
+func TestConvertTo_EnvFromAndVolumes(t *testing.T) {
+	src := &v1alpha1.WebApp{
+		ObjectMeta: metav1.ObjectMeta{Name: "config-test", Namespace: "default"},
+		Spec: v1alpha1.WebAppSpec{
+			Image: "nginx",
+			EnvFrom: []v1alpha1.EnvFromSource{
+				{ConfigMapRef: &v1alpha1.ConfigMapEnvSource{Name: "app-config"}},
+				{SecretRef: &v1alpha1.SecretEnvSource{Name: "db-creds"}},
+			},
+			Volumes: []v1alpha1.VolumeMount{
+				{
+					Name:      "config",
+					MountPath: "/etc/config",
+					ConfigMap: &v1alpha1.ConfigMapVolumeSource{Name: "nginx-conf"},
+				},
+				{
+					Name:      "certs",
+					MountPath: "/etc/ssl",
+					Secret:    &v1alpha1.SecretVolumeSource{Name: "tls-secret"},
+				},
+			},
+		},
+	}
+
+	hub := &v1beta1.WebApp{}
+	if err := src.ConvertTo(hub); err != nil {
+		t.Fatalf("ConvertTo failed: %v", err)
+	}
+
+	if len(hub.Spec.EnvFrom) != 2 {
+		t.Fatalf("expected 2 envFrom, got %d", len(hub.Spec.EnvFrom))
+	}
+	if hub.Spec.EnvFrom[0].ConfigMapRef.Name != "app-config" {
+		t.Errorf("expected configMap app-config, got %s", hub.Spec.EnvFrom[0].ConfigMapRef.Name)
+	}
+	if hub.Spec.EnvFrom[1].SecretRef.Name != "db-creds" {
+		t.Errorf("expected secret db-creds, got %s", hub.Spec.EnvFrom[1].SecretRef.Name)
+	}
+
+	if len(hub.Spec.Volumes) != 2 {
+		t.Fatalf("expected 2 volumes, got %d", len(hub.Spec.Volumes))
+	}
+	if hub.Spec.Volumes[0].ConfigMap.Name != "nginx-conf" {
+		t.Errorf("expected configMap nginx-conf, got %s", hub.Spec.Volumes[0].ConfigMap.Name)
+	}
+	if hub.Spec.Volumes[1].Secret.Name != "tls-secret" {
+		t.Errorf("expected secret tls-secret, got %s", hub.Spec.Volumes[1].Secret.Name)
+	}
+
+	// Round-trip
+	back := &v1alpha1.WebApp{}
+	if err := back.ConvertFrom(hub); err != nil {
+		t.Fatalf("ConvertFrom failed: %v", err)
+	}
+
+	if len(back.Spec.EnvFrom) != 2 {
+		t.Errorf("round-trip envFrom count mismatch: got %d", len(back.Spec.EnvFrom))
+	}
+	if len(back.Spec.Volumes) != 2 {
+		t.Errorf("round-trip volumes count mismatch: got %d", len(back.Spec.Volumes))
+	}
+}
