@@ -226,6 +226,39 @@ func validateWebApp(webapp *myappv1alpha1.WebApp) error {
 		}
 	}
 
+	// Validate volumes: unique names + mutually exclusive configMap/secret
+	volumeNames := make(map[string]bool)
+	for i, v := range webapp.Spec.Volumes {
+		volPath := field.NewPath("spec", "volumes").Index(i)
+
+		if volumeNames[v.Name] {
+			allErrs = append(allErrs, field.Duplicate(volPath.Child("name"), v.Name))
+		}
+		volumeNames[v.Name] = true
+
+		if v.ConfigMap != nil && v.Secret != nil {
+			allErrs = append(allErrs, field.Invalid(
+				volPath,
+				v.Name,
+				"configMap and secret are mutually exclusive"))
+		}
+		if v.ConfigMap == nil && v.Secret == nil {
+			allErrs = append(allErrs, field.Required(
+				volPath,
+				"either configMap or secret must be set"))
+		}
+	}
+
+	// Validate envFrom: at least one of configMapRef/secretRef
+	for i, ef := range webapp.Spec.EnvFrom {
+		efPath := field.NewPath("spec", "envFrom").Index(i)
+		if ef.ConfigMapRef == nil && ef.SecretRef == nil {
+			allErrs = append(allErrs, field.Required(
+				efPath,
+				"either configMapRef or secretRef must be set"))
+		}
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}

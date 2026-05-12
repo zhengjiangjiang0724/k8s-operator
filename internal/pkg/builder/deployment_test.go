@@ -232,3 +232,66 @@ func TestBuildIngress_Enabled(t *testing.T) {
 		t.Errorf("expected host myapp.example.com, got %s", ingress.Spec.Rules[0].Host)
 	}
 }
+
+func TestBuildDeployment_EnvFrom(t *testing.T) {
+	webapp := newTestWebApp()
+	webapp.Spec.EnvFrom = []myappv1alpha1.EnvFromSource{
+		{ConfigMapRef: &myappv1alpha1.ConfigMapEnvSource{Name: "app-config"}},
+		{SecretRef: &myappv1alpha1.SecretEnvSource{Name: "db-creds"}},
+	}
+
+	deploy, err := BuildDeployment(webapp)
+	if err != nil {
+		t.Fatalf("BuildDeployment() error = %v", err)
+	}
+
+	container := deploy.Spec.Template.Spec.Containers[0]
+	if len(container.EnvFrom) != 2 {
+		t.Fatalf("expected 2 envFrom, got %d", len(container.EnvFrom))
+	}
+	if container.EnvFrom[0].ConfigMapRef.Name != "app-config" {
+		t.Errorf("expected configMap app-config, got %s", container.EnvFrom[0].ConfigMapRef.Name)
+	}
+	if container.EnvFrom[1].SecretRef.Name != "db-creds" {
+		t.Errorf("expected secret db-creds, got %s", container.EnvFrom[1].SecretRef.Name)
+	}
+}
+
+func TestBuildDeployment_Volumes(t *testing.T) {
+	webapp := newTestWebApp()
+	webapp.Spec.Volumes = []myappv1alpha1.VolumeMount{
+		{
+			Name:      "config",
+			MountPath: "/etc/config",
+			ConfigMap: &myappv1alpha1.ConfigMapVolumeSource{Name: "nginx-conf"},
+		},
+		{
+			Name:      "certs",
+			MountPath: "/etc/ssl",
+			Secret:    &myappv1alpha1.SecretVolumeSource{Name: "tls-secret"},
+		},
+	}
+
+	deploy, err := BuildDeployment(webapp)
+	if err != nil {
+		t.Fatalf("BuildDeployment() error = %v", err)
+	}
+
+	if len(deploy.Spec.Template.Spec.Volumes) != 2 {
+		t.Fatalf("expected 2 volumes, got %d", len(deploy.Spec.Template.Spec.Volumes))
+	}
+	if deploy.Spec.Template.Spec.Volumes[0].ConfigMap.Name != "nginx-conf" {
+		t.Errorf("expected configMap nginx-conf, got %s", deploy.Spec.Template.Spec.Volumes[0].ConfigMap.Name)
+	}
+	if deploy.Spec.Template.Spec.Volumes[1].Secret.SecretName != "tls-secret" {
+		t.Errorf("expected secret tls-secret, got %s", deploy.Spec.Template.Spec.Volumes[1].Secret.SecretName)
+	}
+
+	container := deploy.Spec.Template.Spec.Containers[0]
+	if len(container.VolumeMounts) != 2 {
+		t.Fatalf("expected 2 volumeMounts, got %d", len(container.VolumeMounts))
+	}
+	if container.VolumeMounts[0].MountPath != "/etc/config" {
+		t.Errorf("expected mountPath /etc/config, got %s", container.VolumeMounts[0].MountPath)
+	}
+}

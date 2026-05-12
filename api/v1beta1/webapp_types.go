@@ -70,6 +70,66 @@ type EnvVar struct {
 	Value string `json:"value,omitempty"`
 }
 
+// EnvFromSource represents a source to populate environment variables from.
+type EnvFromSource struct {
+	// configMapRef references a ConfigMap to populate env vars from all keys.
+	// +optional
+	ConfigMapRef *ConfigMapEnvSource `json:"configMapRef,omitempty"`
+
+	// secretRef references a Secret to populate env vars from all keys.
+	// +optional
+	SecretRef *SecretEnvSource `json:"secretRef,omitempty"`
+}
+
+// ConfigMapEnvSource selects a ConfigMap to populate env vars.
+type ConfigMapEnvSource struct {
+	// name is the ConfigMap name in the same namespace.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// SecretEnvSource selects a Secret to populate env vars.
+type SecretEnvSource struct {
+	// name is the Secret name in the same namespace.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// VolumeMount defines a volume to mount into the container.
+type VolumeMount struct {
+	// name is a unique identifier for this volume mount.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// mountPath is the path inside the container where the volume is mounted.
+	// +kubebuilder:validation:MinLength=1
+	MountPath string `json:"mountPath"`
+
+	// configMap references a ConfigMap to mount as a volume.
+	// Mutually exclusive with secret.
+	// +optional
+	ConfigMap *ConfigMapVolumeSource `json:"configMap,omitempty"`
+
+	// secret references a Secret to mount as a volume.
+	// Mutually exclusive with configMap.
+	// +optional
+	Secret *SecretVolumeSource `json:"secret,omitempty"`
+}
+
+// ConfigMapVolumeSource references a ConfigMap for volume mounting.
+type ConfigMapVolumeSource struct {
+	// name is the ConfigMap name in the same namespace.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// SecretVolumeSource references a Secret for volume mounting.
+type SecretVolumeSource struct {
+	// name is the Secret name in the same namespace.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
 // HealthCheck defines the health check configuration.
 type HealthCheck struct {
 	// path is the HTTP path for the health check probe.
@@ -118,6 +178,15 @@ type WebAppSpec struct {
 	// env is a list of environment variables to set in the container.
 	// +optional
 	Env []EnvVar `json:"env,omitempty"`
+
+	// envFrom populates environment variables from ConfigMap or Secret.
+	// All keys from the referenced resource become env vars.
+	// +optional
+	EnvFrom []EnvFromSource `json:"envFrom,omitempty"`
+
+	// volumes mounts ConfigMaps or Secrets as files into the container.
+	// +optional
+	Volumes []VolumeMount `json:"volumes,omitempty"`
 
 	// serviceType specifies the Kubernetes Service type.
 	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer

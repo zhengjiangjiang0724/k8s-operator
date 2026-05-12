@@ -34,7 +34,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	myappv1alpha1 "github.com/example/webapp-operator/api/v1alpha1"
 	"github.com/example/webapp-operator/internal/pkg/builder"
@@ -68,6 +70,8 @@ type WebAppReconciler struct {
 // +kubebuilder:rbac:groups=myapp.example.com,resources=webapps/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -207,6 +211,19 @@ func (r *WebAppReconciler) reconcileDeployment(ctx context.Context, webapp *myap
 	if err != nil {
 		return fmt.Errorf("failed to build Deployment: %w", err)
 	}
+
+	// Inject config hash annotation to trigger rollout on ConfigMap/Secret change
+	hash, err := builder.ComputeConfigHash(ctx, r.Client, webapp)
+	if err != nil {
+		return fmt.Errorf("failed to compute config hash: %w", err)
+	}
+	if hash != "" {
+		if desired.Spec.Template.Annotations == nil {
+			desired.Spec.Template.Annotations = make(map[string]string)
+		}
+		desired.Spec.Template.Annotations["webapp.example.com/config-hash"] = hash
+	}
+
 	if err := k8sutil.SetOwnerReference(webapp, desired, r.Scheme); err != nil {
 		return err
 	}
@@ -497,9 +514,91 @@ func (r *WebAppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&networkingv1.Ingress{}).
 		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
+		Watches(&corev1.ConfigMap{}, r.enqueueWebAppsForConfigMap()).
+		Watches(&corev1.Secret{}, r.enqueueWebAppsForSecret()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: concurrency,
 		}).
 		Named("webapp").
 		Complete(r)
+}
+
+// enqueueWebAppsForConfigMap returns a handler that enqueues all WebApps
+// referencing the changed ConfigMap (via envFrom or volumes).
+func (r *WebAppReconciler) enqueueWebAppsForConfigMap() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		cm := obj.(*corev1.ConfigMap)
+		return r.findWebAppsReferencingConfigMap(ctx, cm)
+	})
+}
+
+// enqueueWebAppsForSecret returns a handler that enqueues all WebApps
+// referencing the changed Secret (via envFrom or volumes).
+func (r *WebAppReconciler) enqueueWebAppsForSecret() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		sec := obj.(*corev1.Secret)
+		return r.findWebAppsReferencingSecret(ctx, sec)
+	})
+}
+
+func (r *WebAppReconciler) findWebAppsReferencingConfigMap(ctx context.Context, cm *corev1.ConfigMap) []reconcile.Request {
+	var list myappv1alpha1.WebAppList
+	if err := r.List(ctx, &list, client.InNamespace(cm.Namespace)); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, wa := range list.Items {
+		if referencesConfigMap(&wa, cm.Name) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(&wa),
+			})
+		}
+	}
+	return requests
+}
+
+func (r *WebAppReconciler) findWebAppsReferencingSecret(ctx context.Context, sec *corev1.Secret) []reconcile.Request {
+	var list myappv1alpha1.WebAppList
+	if err := r.List(ctx, &list, client.InNamespace(sec.Namespace)); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, wa := range list.Items {
+		if referencesSecret(&wa, sec.Name) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(&wa),
+			})
+		}
+	}
+	return requests
+}
+
+func referencesConfigMap(wa *myappv1alpha1.WebApp, name string) bool {
+	for _, ef := range wa.Spec.EnvFrom {
+		if ef.ConfigMapRef != nil && ef.ConfigMapRef.Name == name {
+			return true
+		}
+	}
+	for _, v := range wa.Spec.Volumes {
+		if v.ConfigMap != nil && v.ConfigMap.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func referencesSecret(wa *myappv1alpha1.WebApp, name string) bool {
+	for _, ef := range wa.Spec.EnvFrom {
+		if ef.SecretRef != nil && ef.SecretRef.Name == name {
+			return true
+		}
+	}
+	for _, v := range wa.Spec.Volumes {
+		if v.Secret != nil && v.Secret.Name == name {
+			return true
+		}
+	}
+	return false
 }

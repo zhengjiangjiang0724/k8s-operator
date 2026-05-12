@@ -520,4 +520,56 @@ var _ = Describe("WebApp Controller", func() {
 				"Replicas should be re-set after HPA removal")
 		})
 	})
+
+	Context("ConfigMap/Secret change detection", func() {
+		const cmName = "webapp-cm-test"
+		nn := types.NamespacedName{Name: cmName, Namespace: namespace}
+
+		It("should trigger Pod rollout when ConfigMap data changes", func() {
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "app-config", Namespace: namespace},
+				Data:       map[string]string{"KEY": "value1"},
+			}
+			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+
+			webapp := &myappv1alpha1.WebApp{
+				ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace},
+				Spec: myappv1alpha1.WebAppSpec{
+					Image:          "nginx:1.25",
+					Replicas:       ptr.To(int32(2)),
+					Port:           80,
+					ServiceType:    corev1.ServiceTypeClusterIP,
+					UpdateStrategy: "RollingUpdate",
+					EnvFrom: []myappv1alpha1.EnvFromSource{
+						{ConfigMapRef: &myappv1alpha1.ConfigMapEnvSource{Name: "app-config"}},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, webapp)).To(Succeed())
+
+			reconciler := newReconciler()
+			for range 3 {
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			deploy1 := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy1)).To(Succeed())
+			hash1 := deploy1.Spec.Template.Annotations["webapp.example.com/config-hash"]
+			Expect(hash1).NotTo(BeEmpty(), "config-hash annotation should be set")
+
+			By("updating ConfigMap data")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "app-config", Namespace: namespace}, cm)).To(Succeed())
+			cm.Data["KEY"] = "value2"
+			Expect(k8sClient.Update(ctx, cm)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			deploy2 := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy2)).To(Succeed())
+			hash2 := deploy2.Spec.Template.Annotations["webapp.example.com/config-hash"]
+			Expect(hash2).NotTo(Equal(hash1), "config-hash should change when ConfigMap data changes")
+		})
+	})
 })

@@ -65,6 +65,35 @@ func convertSpecToV1Beta1(src WebAppSpec) v1beta1.WebAppSpec {
 			dst.Env[i] = v1beta1.EnvVar{Name: e.Name, Value: e.Value}
 		}
 	}
+
+	if len(src.EnvFrom) > 0 {
+		dst.EnvFrom = make([]v1beta1.EnvFromSource, len(src.EnvFrom))
+		for i, ef := range src.EnvFrom {
+			dst.EnvFrom[i] = v1beta1.EnvFromSource{}
+			if ef.ConfigMapRef != nil {
+				dst.EnvFrom[i].ConfigMapRef = &v1beta1.ConfigMapEnvSource{Name: ef.ConfigMapRef.Name}
+			}
+			if ef.SecretRef != nil {
+				dst.EnvFrom[i].SecretRef = &v1beta1.SecretEnvSource{Name: ef.SecretRef.Name}
+			}
+		}
+	}
+
+	if len(src.Volumes) > 0 {
+		dst.Volumes = make([]v1beta1.VolumeMount, len(src.Volumes))
+		for i, v := range src.Volumes {
+			dst.Volumes[i] = v1beta1.VolumeMount{
+				Name:      v.Name,
+				MountPath: v.MountPath,
+			}
+			if v.ConfigMap != nil {
+				dst.Volumes[i].ConfigMap = &v1beta1.ConfigMapVolumeSource{Name: v.ConfigMap.Name}
+			}
+			if v.Secret != nil {
+				dst.Volumes[i].Secret = &v1beta1.SecretVolumeSource{Name: v.Secret.Name}
+			}
+		}
+	}
 	if src.HealthCheck != nil {
 		dst.HealthCheck = &v1beta1.HealthCheck{
 			Path:                src.HealthCheck.Path,
@@ -103,6 +132,35 @@ func convertSpecFromV1Beta1(src v1beta1.WebAppSpec) WebAppSpec {
 		dst.Env = make([]EnvVar, len(src.Env))
 		for i, e := range src.Env {
 			dst.Env[i] = EnvVar{Name: e.Name, Value: e.Value}
+		}
+	}
+
+	if len(src.EnvFrom) > 0 {
+		dst.EnvFrom = make([]EnvFromSource, len(src.EnvFrom))
+		for i, ef := range src.EnvFrom {
+			dst.EnvFrom[i] = EnvFromSource{}
+			if ef.ConfigMapRef != nil {
+				dst.EnvFrom[i].ConfigMapRef = &ConfigMapEnvSource{Name: ef.ConfigMapRef.Name}
+			}
+			if ef.SecretRef != nil {
+				dst.EnvFrom[i].SecretRef = &SecretEnvSource{Name: ef.SecretRef.Name}
+			}
+		}
+	}
+
+	if len(src.Volumes) > 0 {
+		dst.Volumes = make([]VolumeMount, len(src.Volumes))
+		for i, v := range src.Volumes {
+			dst.Volumes[i] = VolumeMount{
+				Name:      v.Name,
+				MountPath: v.MountPath,
+			}
+			if v.ConfigMap != nil {
+				dst.Volumes[i].ConfigMap = &ConfigMapVolumeSource{Name: v.ConfigMap.Name}
+			}
+			if v.Secret != nil {
+				dst.Volumes[i].Secret = &SecretVolumeSource{Name: v.Secret.Name}
+			}
 		}
 	}
 	if src.HealthCheck != nil {
